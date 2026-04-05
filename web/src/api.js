@@ -45,3 +45,7 @@ export const startSession = (planId, programId) => request('POST', '/sessions', 
 export const finishSession = (id) => request('POST', `/sessions/${id}/finish`)
 export const logSet = (sessionId, data) => request('POST', `/sessions/${sessionId}/sets`, data)
 export const getSessionSummary = (id) => request('GET', `/sessions/${id}/summary`)
+export const updateSessionNotes = (id, notes) => request('PUT', `/sessions/${id}`, { notes })
+
+// Stats
+export const getBestSets = () => request('GET', '/stats/best-sets')

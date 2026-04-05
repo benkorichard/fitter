@@ -1,8 +1,11 @@
 import datetime
+import csv
+import io
 from collections import defaultdict
 from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -200,6 +203,9 @@ def get_program_progress(program_id: int, db: Session = Depends(get_db)):
     progress_entries: list = []
     for session in sessions:
         for s in session.logged_sets:
+            # Skip warmup sets from progression calculations
+            if s.is_warmup:
+                continue
             progress_entries.append(
                 schemas.SetProgressEntry(
                     session_id=session.id,
@@ -242,6 +248,18 @@ def finish_session(session_id: int, db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(404, "Session not found")
     session.finished_at = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@app.put("/api/sessions/{session_id}", response_model=schemas.WorkoutSession)
+def update_session(session_id: int, body: dict, db: Session = Depends(get_db)):
+    session = db.get(models.WorkoutSession, session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if "notes" in body:
+        session.notes = body["notes"]
     db.commit()
     db.refresh(session)
     return session
@@ -298,6 +316,98 @@ def get_summary(session_id: int, db: Session = Depends(get_db)):
         started_at=session.started_at,
         finished_at=session.finished_at,
         duration_seconds=duration,
+        notes=session.notes,
         exercises=exercise_summaries,
         grand_total_weight=grand_total,
+    )
+
+
+# ─────────────────────────── Stats ───────────────────────────────
+
+@app.get("/api/stats/best-sets")
+def get_best_sets(db: Session = Depends(get_db)):
+    """Return the best (heaviest non-warmup) set per exercise across all sessions."""
+    sets = (
+        db.query(models.SessionSet)
+        .filter(models.SessionSet.is_warmup == False)
+        .all()
+    )
+
+    # Group sets by exercise, tracking best (highest weight, then most reps)
+    best: dict = {}
+    for s in sets:
+        pe = db.get(models.PlanExercise, s.plan_exercise_id)
+        if not pe:
+            continue
+        ex = pe.exercise
+        key = ex.id
+        if key not in best or (s.weight_used, s.reps_done) > (best[key]["weight"], best[key]["reps"]):
+            best[key] = {
+                "exercise_id": ex.id,
+                "exercise_name": ex.name,
+                "muscle_group": ex.muscle_group,
+                "reps": s.reps_done,
+                "weight": s.weight_used,
+            }
+
+    return list(best.values())
+
+
+# ─────────────────────────── Export ──────────────────────────────
+
+def _build_export_rows(db: Session):
+    """Return all logged sets as a flat list of dicts for export."""
+    sets = db.query(models.SessionSet).order_by(models.SessionSet.session_id, models.SessionSet.set_number).all()
+    rows = []
+    for s in sets:
+        session = db.get(models.WorkoutSession, s.session_id)
+        pe = db.get(models.PlanExercise, s.plan_exercise_id)
+        plan = db.get(models.WorkoutPlan, session.plan_id) if session else None
+        program = db.get(models.TrainingProgram, session.program_id) if session and session.program_id else None
+        rows.append({
+            "session_id": s.session_id,
+            "session_date": session.started_at.isoformat() if session else "",
+            "session_notes": session.notes if session else "",
+            "plan_name": plan.name if plan else "",
+            "program_name": program.name if program else "",
+            "exercise_name": pe.exercise.name if pe else "",
+            "muscle_group": pe.exercise.muscle_group if pe else "",
+            "set_number": s.set_number,
+            "reps_done": s.reps_done,
+            "weight_used": s.weight_used,
+            "is_warmup": s.is_warmup,
+        })
+    return rows
+
+
+@app.get("/api/export/csv")
+def export_csv(db: Session = Depends(get_db)):
+    rows = _build_export_rows(db)
+    fieldnames = ["session_id", "session_date", "session_notes", "plan_name", "program_name",
+                  "exercise_name", "muscle_group", "set_number", "reps_done", "weight_used", "is_warmup"]
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    buf.seek(0)
+
+    filename = f"fitter-export-{datetime.date.today()}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/api/export/json")
+def export_json(db: Session = Depends(get_db)):
+    rows = _build_export_rows(db)
+    import json
+    payload = json.dumps(rows, indent=2)
+    filename = f"fitter-export-{datetime.date.today()}.json"
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

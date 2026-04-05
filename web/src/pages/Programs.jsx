@@ -28,9 +28,14 @@ export default function Programs() {
     <div>
       <div className="page-actions">
         <h1>Training Programs</h1>
-        <Link to="/programs/new">
-          <button className="btn-primary">+ New Program</button>
-        </Link>
+        <div className="flex-gap">
+          <Link to="/programs/new">
+            <button className="btn-primary">+ New Program</button>
+          </Link>
+          <Link to="/cycle-comparison">
+            <button className="btn-secondary">Compare Cycles</button>
+          </Link>
+        </div>
       </div>
 
       {programs.length === 0 && (

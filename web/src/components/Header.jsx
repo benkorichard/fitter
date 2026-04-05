@@ -11,6 +11,12 @@ export default function Header() {
         <NavLink to="/programs" className={({ isActive }) => isActive ? 'active' : ''}>
           Programs
         </NavLink>
+        <NavLink to="/1rm" className={({ isActive }) => isActive ? 'active' : ''}>
+          1RM
+        </NavLink>
+        <NavLink to="/export" className={({ isActive }) => isActive ? 'active' : ''}>
+          Export
+        </NavLink>
         <NavLink to="/exercises" className={({ isActive }) => isActive ? 'active' : ''}>
           Exercises
         </NavLink>

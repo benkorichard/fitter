@@ -68,6 +68,7 @@ class WorkoutSession(Base):
     program_id = Column(Integer, ForeignKey("training_programs.id"), nullable=True)
     started_at = Column(DateTime, default=datetime.datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
+    notes = Column(String(1000), default="")  # Session notes
     logged_sets = relationship(
         "SessionSet",
         back_populates="session",
@@ -85,6 +86,7 @@ class SessionSet(Base):
     set_number = Column(Integer, nullable=False)
     reps_done = Column(Integer, nullable=False)
     weight_used = Column(Float, nullable=False)
+    is_warmup = Column(Integer, default=False)  # 0=False, 1=True for warmup sets
 
     session = relationship("WorkoutSession", back_populates="logged_sets")
     plan_exercise = relationship("PlanExercise")
