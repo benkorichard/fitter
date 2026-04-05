@@ -65,6 +65,7 @@ class TrainingProgram(TrainingProgramCreate):
 class WorkoutSessionCreate(BaseModel):
     plan_id: int
     program_id: Optional[int] = None
+    notes: str = ""
 
 
 class WorkoutSession(WorkoutSessionCreate):
@@ -81,6 +82,7 @@ class SessionSetCreate(BaseModel):
     set_number: int
     reps_done: int
     weight_used: float
+    is_warmup: bool = False
 
 
 class SessionSet(SessionSetCreate):
@@ -105,6 +107,7 @@ class SessionSummary(BaseModel):
     started_at: datetime.datetime
     finished_at: Optional[datetime.datetime] = None
     duration_seconds: Optional[int] = None
+    notes: str = ""
     exercises: List[ExerciseSummary]
     grand_total_weight: float
 

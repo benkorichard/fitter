@@ -1,13 +1,18 @@
 # Fitter - Workout Tracker
 
-A web application for tracking workout progress through training programs with detailed exercise logging and progression tracking.
+A web application for tracking workout progress through training programs, with set-level logging, progression analytics, and export tools.
 
 ## Features
 
 - **Sessions**: Create reusable workout session templates with custom exercises, sets, reps, and weights
 - **Programs**: Organize sessions into training programs to track long-term progression
-- **Progress Tracking**: View detailed progression data across all sessions in a program, including reps/weight progression by set
+- **Progress Tracking**: View detailed progression data across all sessions in a program, including reps/weight progression charts
+- **Cycle Comparison**: Compare two program cycles side-by-side with per-set performance deltas
+- **Warmup Set Handling**: Mark sets as warmup so they are excluded from progression/PR metrics
 - **Active Workout**: Log sets during workouts with configurable rest timers and audio cues
+- **Session Notes**: Save notes per workout session and edit them from the summary view
+- **1RM Calculator**: Estimate one-rep max from manual input and from logged workout data
+- **Data Export**: Export all logged sets as CSV or JSON for backup and analysis
 - **Session History**: Access past workout summaries with total reps, weight moved, and duration
 - **Exercise Library**: Manage your exercise database with muscle groups and descriptions
 
@@ -15,6 +20,7 @@ A web application for tracking workout progress through training programs with d
 
 - **Frontend**: React + Vite
 - **Backend**: Python + FastAPI
+- **Web Serving (Prod)**: Nginx (serving built static files)
 - **Database**: SQLite
 - **Containerization**: Docker Compose
 
@@ -31,8 +37,9 @@ docker compose up --build
 ```
 
 The app will be available at:
-- Frontend: http://localhost:5173
+- Frontend: http://localhost
 - API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
 ### First Time Setup
 
@@ -56,6 +63,18 @@ SQLite database is stored in a Docker volume at `/data/fitter.db` inside the con
 To access the database file:
 ```bash
 docker compose cp api:/data/fitter.db ./fitter.db
+```
+
+## Deployment Notes
+
+- The web container uses a production build (Vite build output) served by Nginx.
+- Nginx proxies `/api/*` traffic to the API container.
+- API hostname is configurable through `API_HOST` (defaults to `api`).
+
+Example `.env` override for custom API container hostname:
+
+```env
+API_HOST=my-fitter-api
 ```
 
 ## Notes

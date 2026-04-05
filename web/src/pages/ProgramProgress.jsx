@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import * as api from '../api'
 
 export default function ProgramProgress() {
@@ -53,6 +54,139 @@ export default function ProgramProgress() {
     return weights.length > 0 ? Math.max(...weights) : 0
   }
 
+  function buildChartData() {
+    const chartBySession = {}
+    
+    // Group by session, get date
+    progress.progress_entries.forEach(entry => {
+      if (!chartBySession[entry.session_id]) {
+        chartBySession[entry.session_id] = {
+          session_id: entry.session_id,
+          session_date: entry.session_date,
+          date_label: formatDate(entry.session_date),
+        }
+      }
+    })
+
+    // For each session, add reps/weight for each set
+    progress.progress_entries.forEach(entry => {
+      const sessionData = chartBySession[entry.session_id]
+      sessionData[`set${entry.set_number}_reps`] = entry.reps_done
+      sessionData[`set${entry.set_number}_weight`] = entry.weight_used
+    })
+
+    // Return sorted by date
+    return Object.values(chartBySession).sort((a, b) => 
+      new Date(a.session_date) - new Date(b.session_date)
+    )
+  }
+
+  function getSetNumbers() {
+    return Array.from(
+      new Set(progress.progress_entries.map(e => e.set_number))
+    ).sort((a, b) => a - b)
+  }
+
+  return (
+    <div>
+      <h1>{progress.program_name}</h1>
+      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
+        {progress.exercise_name && <><strong>{progress.exercise_name}</strong> — </>}
+        Goal: <strong>{progress.goal || 'Not set'}</strong>
+      </p>
+
+      {/* Summary Stats */}
+      <div className="summary-stats">
+        <div className="stat-card">
+          <span className="stat-value">{progress.total_sessions}</span>
+          <span className="stat-label">Workouts logged</span>
+        </div>
+        {progress.progress_entries.length > 0 && (
+          <>
+            <div className="stat-card">
+              <span className="stat-value">{Math.max(...progress.progress_entries.map(e => e.set_number))}</span>
+              <span className="stat-label">Highest set</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{Math.max(...progress.progress_entries.map(e => e.reps_done))}</span>
+              <span className="stat-label">Max reps (1 set)</span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-value">{Math.max(...progress.progress_entries.map(e => e.weight_used))} kg</span>
+              <span className="stat-label">Max weight</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Charts */}
+      {progress.progress_entries.length > 0 && (
+        <>
+          <div className="card mt-2">
+            <h2>Reps progression</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={buildChartData()} margin={{ top: 5, right: 30, left: 0, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="date_label" 
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis label={{ value: 'Reps', angle: -90, position: 'insideLeft' }} />
+                <Tooltip />
+                <Legend />
+                {getSetNumbers().map((setNum, idx) => (
+                  <Line
+                    key={setNum}
+                    type="monotone"
+                    dataKey={`set${setNum}_reps`}
+                    name={`Set ${setNum}`}
+                    stroke={['#ff7300', '#82ca9d', '#8884d8', '#ffc658', '#ff7c7c', '#a4de6c'][idx % 6]}
+                    connectNulls
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="card mt-2">
+            <h2>Weight progression</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={buildChartData()} margin={{ top: 5, right: 30, left: 0, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="date_label" 
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis label={{ value: 'Weight (kg)', angle: -90, position: 'insideLeft' }} />
+                <Tooltip />
+                <Legend />
+                {getSetNumbers().map((setNum, idx) => (
+                  <Line
+                    key={setNum}
+                    type="monotone"
+                    dataKey={`set${setNum}_weight`}
+                    name={`Set ${setNum}`}
+                    stroke={['#ff7300', '#82ca9d', '#8884d8', '#ffc658', '#ff7c7c', '#a4de6c'][idx % 6]}
+                    connectNulls
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      {/* 
   return (
     <div>
       <h1>{progress.program_name}</h1>

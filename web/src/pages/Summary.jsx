@@ -17,13 +17,32 @@ export default function Summary() {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     api.getSessionSummary(sessionId)
-      .then(setSummary)
+      .then(data => {
+        setSummary(data)
+        setNotes(data.notes || '')
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [sessionId])
+
+  async function saveNotes() {
+    setSaving(true)
+    try {
+      await api.updateSessionNotes(sessionId, notes)
+      setSummary(prev => ({ ...prev, notes }))
+      setEditing(false)
+    } catch (e) {
+      alert('Error saving notes: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading) return <div className="loading">Loading summary…</div>
   if (error) return <div className="error">{error}</div>
@@ -88,6 +107,44 @@ export default function Summary() {
           </table>
         )}
       </div>
+
+      {editing ? (
+        <div className="card">
+          <h2>Session notes</h2>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="How did you feel? Any observations?"
+            style={{
+              width: '100%',
+              minHeight: '100px',
+              padding: '0.75rem',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              backgroundColor: 'var(--bg-input)',
+              color: 'var(--text)',
+              fontFamily: 'inherit',
+              fontSize: '0.95rem',
+              marginBottom: '1rem',
+              resize: 'vertical',
+            }}
+          />
+          <div className="flex-gap">
+            <button className="btn-primary" onClick={saveNotes} disabled={saving}>
+              {saving ? 'Saving…' : 'Save notes'}
+            </button>
+            <button className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        summary.notes && (
+          <div className="card">
+            <h2>Session notes</h2>
+            <p style={{ whiteSpace: 'pre-wrap', color: 'var(--text)' }}>{summary.notes}</p>
+            <button className="btn-secondary" onClick={() => setEditing(true)}>Edit notes</button>
+          </div>
+        )
+      )}
 
       <div className="flex-gap mt-3">
         <Link to="/"><button className="btn-primary">Back to Sessions</button></Link>
