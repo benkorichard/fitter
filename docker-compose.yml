@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  api:
+    build: ./api
+    volumes:
+      - ./api:/app
+      - fitter-data:/data
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:////data/fitter.db
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  fitter-data:
