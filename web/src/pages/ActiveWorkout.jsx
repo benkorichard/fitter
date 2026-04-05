@@ -31,6 +31,8 @@ export default function ActiveWorkout() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [preWorkoutCountdown, setPreWorkoutCountdown] = useState(5) // 5 seconds
+  const [isWarmup, setIsWarmup] = useState(false) // Track if current set is warmup
+  const [notes, setNotes] = useState('') // Session notes
 
   const sessionRef = useRef(null)
   const soundPlayedRef = useRef(new Set()) // Track which countdown seconds have played sounds
@@ -118,14 +120,16 @@ export default function ActiveWorkout() {
       set_number: setNumber,
       reps_done: reps,
       weight_used: weight,
+      is_warmup: isWarmup,
     })
 
     setLoggedSets(prev => ({
       ...prev,
-      [currentPE.id]: [...(prev[currentPE.id] || []), { set_number: setNumber, reps_done: reps, weight_used: weight }],
+      [currentPE.id]: [...(prev[currentPE.id] || []), { set_number: setNumber, reps_done: reps, weight_used: weight, is_warmup: isWarmup }],
     }))
     soundPlayedRef.current.clear() // Reset sound tracking for new rest period
     setRestSeconds(plan.rest_time)
+    setIsWarmup(false) // Reset warmup flag for next set
   }
 
   function goToExercise(idx) {
@@ -139,6 +143,10 @@ export default function ActiveWorkout() {
   async function finishWorkout() {
     setFinishing(true)
     try {
+      // Update session notes if provided
+      if (notes.trim()) {
+        await api.updateSessionNotes(session.id, notes)
+      }
       await api.finishSession(session.id)
       navigate(`/session/${session.id}/summary`)
     } catch (e) {
@@ -275,6 +283,14 @@ export default function ActiveWorkout() {
                         onChange={e => setCurrentWeight(e.target.value)}
                       />
                     </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={isWarmup}
+                        onChange={e => setIsWarmup(e.target.checked)}
+                      />
+                      <span>Warmup set (exclude from progression)</span>
+                    </label>
                     <button className="btn-primary" onClick={logSet}>✔ Log Set</button>
                   </div>
                 )}
@@ -296,6 +312,26 @@ export default function ActiveWorkout() {
       </div>
 
       <div className="workout-footer">
+        <div style={{ width: '100%', marginBottom: '1rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Session notes (optional)</label>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="How did you feel? Any observations?"
+            style={{
+              width: '100%',
+              minHeight: '80px',
+              padding: '0.75rem',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              backgroundColor: 'var(--bg-input)',
+              color: 'var(--text)',
+              fontFamily: 'inherit',
+              fontSize: '0.95rem',
+              resize: 'vertical',
+            }}
+          />
+        </div>
         <button className="btn-finish" onClick={finishWorkout} disabled={finishing}>
           {finishing ? 'Saving…' : 'Finish Workout'}
         </button>

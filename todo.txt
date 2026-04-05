@@ -1,0 +1,34 @@
+High priority
+
+- [ ] Reliability: automatic backups
+  - Nightly copy of the SQLite DB volume to a timestamped backup folder.
+  - Add a restore script.
+
+- [ ] Basic test coverage
+  - API smoke tests for core flows: create session, log sets, finish session, summary/progress.
+
+- [ ] Data quality improvements
+  - Add optional RPE/RIR fields per set.
+
+- [ ] Better progression analytics
+  - Rolling bests (30/90 day), plateau detection, and new-PR highlights.
+
+- [ ] Program templates
+  - Save reusable session/program templates (for ABA/BAB blocks) and clone quickly.
+
+- [ ] Calendar and consistency view
+  - Weekly/monthly workout heatmap.
+
+Medium priority
+
+- [ ] API documentation polish
+  - Improve schema examples and endpoint descriptions.
+
+- [ ] Import capability (CSV/JSON)
+  - Add import with validation and dry-run preview.
+
+- [ ] Active workout UX refinement
+  - Keyboard-first logging, duplicate previous set, and quick increment/decrement controls.
+
+- [ ] Lightweight observability
+  - Request logging, simple error tracking, and health checks.
