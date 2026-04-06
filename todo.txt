@@ -34,7 +34,7 @@ Medium priority
 - [x] Active workout UX refinement
   - Keyboard-first logging, duplicate previous set, and quick increment/decrement controls.
 
-- [ ] Lightweight observability
+- [x] Lightweight observability
   - Request logging, simple error tracking, and health checks.
 
 - [x] Program status persistence bug

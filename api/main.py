@@ -2,11 +2,14 @@ import datetime
 import csv
 import io
 import json
+import logging
+import time
+import uuid
 from collections import defaultdict
 from typing import Any, Dict, List
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -64,6 +67,9 @@ def _sqlite_add_missing_columns():
 _sqlite_add_missing_columns()
 
 app = FastAPI(title="Fitter API")
+logger = logging.getLogger("fitter.api")
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +77,64 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Log every request with status code and latency."""
+    started = time.perf_counter()
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    status_code = 500
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["x-request-id"] = request_id
+        return response
+    except Exception:
+        logger.exception(
+            "request_failed request_id=%s method=%s path=%s client=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            request.client.host if request.client else "unknown",
+        )
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - started) * 1000
+        logger.info(
+            "request request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
+            request_id,
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+        )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception(
+        "unhandled_exception method=%s path=%s",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "service": "fitter-api"}
+
+
+@app.get("/api/health/ready")
+def readiness_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "ok"}
+    except Exception as exc:
+        logger.exception("readiness_check_failed")
+        raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
 
 
 def _is_analytics_session(session: models.WorkoutSession) -> bool:
