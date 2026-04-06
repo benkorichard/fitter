@@ -4,7 +4,7 @@ High priority
   - Nightly copy of the SQLite DB volume to a timestamped backup folder.
   - Add a restore script.
 
-- [ ] Basic test coverage
+- [x] Basic test coverage
   - API smoke tests for core flows: create session, log sets, finish session, summary/progress.
 
 - [ ] Data quality improvements
