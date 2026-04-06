@@ -44,6 +44,13 @@ def _sqlite_add_missing_columns():
 
     with engine.begin() as conn:
         for table_name, columns in table_column_sql.items():
+            table_exists = conn.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :name"),
+                {"name": table_name},
+            ).first()
+            if not table_exists:
+                continue
+
             existing_cols = {
                 row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
             }
