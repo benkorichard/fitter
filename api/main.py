@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 import models
@@ -15,6 +16,43 @@ import schemas
 from database import Base, engine, get_db
 
 Base.metadata.create_all(bind=engine)
+
+
+def _sqlite_add_missing_columns():
+    """Best-effort schema patching for SQLite deployments without Alembic migrations."""
+    if engine.url.get_backend_name() != "sqlite":
+        return
+
+    table_column_sql = {
+        "workout_plans": {
+            "scheme_type": "ALTER TABLE workout_plans ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
+        },
+        "plan_exercises": {
+            "scheme_type": "ALTER TABLE plan_exercises ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
+            "superset_group": "ALTER TABLE plan_exercises ADD COLUMN superset_group VARCHAR(50) DEFAULT ''",
+            "superset_order": "ALTER TABLE plan_exercises ADD COLUMN superset_order INTEGER DEFAULT 0",
+        },
+        "workout_sessions": {
+            "notes": "ALTER TABLE workout_sessions ADD COLUMN notes VARCHAR(1000) DEFAULT ''",
+        },
+        "session_sets": {
+            "rpe": "ALTER TABLE session_sets ADD COLUMN rpe FLOAT",
+            "rir": "ALTER TABLE session_sets ADD COLUMN rir FLOAT",
+            "is_warmup": "ALTER TABLE session_sets ADD COLUMN is_warmup INTEGER DEFAULT 0",
+        },
+    }
+
+    with engine.begin() as conn:
+        for table_name, columns in table_column_sql.items():
+            existing_cols = {
+                row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+            }
+            for col_name, alter_sql in columns.items():
+                if col_name not in existing_cols:
+                    conn.exec_driver_sql(alter_sql)
+
+
+_sqlite_add_missing_columns()
 
 app = FastAPI(title="Fitter API")
 

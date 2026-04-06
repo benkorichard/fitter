@@ -14,6 +14,7 @@ export default function PlanEditor() {
   const [deletedPeIds, setDeletedPeIds] = useState([])
   const [selectedExId, setSelectedExId] = useState('')
   const [restTime, setRestTime] = useState(60)
+  const [schemeType, setSchemeType] = useState('straight')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -27,6 +28,7 @@ export default function PlanEditor() {
         setName(plan.name)
         setDescription(plan.description || '')
         setRestTime(plan.rest_time || 60)
+        setSchemeType(plan.scheme_type || 'straight')
         setPlanExercises(
           plan.plan_exercises.map(pe => ({
             id: pe.id,
@@ -50,7 +52,14 @@ export default function PlanEditor() {
     if (planExercises.find(pe => pe.exercise_id === ex.id)) return
     setPlanExercises(prev => [
       ...prev,
-      { exercise_id: ex.id, exercise: ex, sets: 3, reps: 10, weight: 0, order: prev.length },
+      {
+        exercise_id: ex.id,
+        exercise: ex,
+        sets: 3,
+        reps: 10,
+        weight: 0,
+        order: prev.length,
+      },
     ])
   }
 
@@ -63,7 +72,18 @@ export default function PlanEditor() {
   function updateField(index, field, value) {
     setPlanExercises(prev =>
       prev.map((pe, i) =>
-        i === index ? { ...pe, [field]: field === 'weight' ? parseFloat(value) || 0 : parseInt(value) || 0 } : pe
+        i === index
+          ? {
+              ...pe,
+              [field]: (
+                field === 'weight'
+                  ? parseFloat(value) || 0
+                  : field === 'sets' || field === 'reps' || field === 'order'
+                    ? parseInt(value) || 0
+                    : value
+              ),
+            }
+          : pe
       )
     )
   }
@@ -74,10 +94,10 @@ export default function PlanEditor() {
     try {
       let planId
       if (isEdit) {
-        await api.updatePlan(id, { name, description, rest_time: restTime })
+        await api.updatePlan(id, { name, description, rest_time: restTime, scheme_type: schemeType })
         planId = parseInt(id)
       } else {
-        const plan = await api.createPlan({ name, description, rest_time: restTime })
+        const plan = await api.createPlan({ name, description, rest_time: restTime, scheme_type: schemeType })
         planId = plan.id
       }
 
@@ -87,7 +107,13 @@ export default function PlanEditor() {
 
       for (let i = 0; i < planExercises.length; i++) {
         const pe = planExercises[i]
-        const body = { exercise_id: pe.exercise_id, sets: pe.sets, reps: pe.reps, weight: pe.weight, order: i }
+        const body = {
+          exercise_id: pe.exercise_id,
+          sets: pe.sets,
+          reps: pe.reps,
+          weight: pe.weight,
+          order: i,
+        }
         if (pe.id) {
           await api.updatePlanExercise(pe.id, body)
         } else {
@@ -148,6 +174,21 @@ export default function PlanEditor() {
           />
           <span style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem', display: 'block' }}>
             {restTime} seconds
+          </span>
+        </div>
+        <div className="form-group">
+          <label htmlFor="plan-scheme">Set programming</label>
+          <select
+            id="plan-scheme"
+            value={schemeType}
+            onChange={e => setSchemeType(e.target.value)}
+            style={{ width: '220px' }}
+          >
+            <option value="straight">Straight sets</option>
+            <option value="superset">Supersets (adjacent exercise pairs)</option>
+          </select>
+          <span style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem', display: 'block' }}>
+            In superset mode, workout auto-switches between adjacent exercise pairs (1-2, 3-4, ...).
           </span>
         </div>
       </div>

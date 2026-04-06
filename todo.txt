@@ -9,7 +9,7 @@ High priority
 - [x] Better progression analytics
   - Rolling bests (30/90 day), plateau detection, and new-PR highlights.
 
-- [ ] Program templates
+- [x] Program templates
   - Save reusable session/program templates (for ABA/BAB blocks) and clone quickly.
 
 - [x] Calendar and consistency view

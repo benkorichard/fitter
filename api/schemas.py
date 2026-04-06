@@ -23,6 +23,9 @@ class PlanExerciseCreate(BaseModel):
     sets: int = 3
     reps: int = 10
     weight: float = 0.0
+    scheme_type: str = "straight"
+    superset_group: str = ""
+    superset_order: int = 0
     order: int = 0
 
 
@@ -38,6 +41,7 @@ class WorkoutPlanCreate(BaseModel):
     name: str
     description: str = ""
     rest_time: int = 60
+    scheme_type: str = "straight"
 
 
 class WorkoutPlan(WorkoutPlanCreate):

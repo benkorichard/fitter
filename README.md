@@ -14,6 +14,7 @@ A web application for tracking workout progress through training programs, with 
 - **Set Quality Metrics**: Optional RPE/RIR logging per set
 - **Active Workout**: Log sets during workouts with configurable rest timers and audio cues
 - **Session Notes**: Save notes per workout session and edit them from the summary view
+- **Set Programming (MVP)**: Straight sets and supersets with automatic exercise switching in active workout
 - **1RM Calculator**: Estimate one-rep max from manual input and from logged workout data
 - **Data Export**: Export all logged sets as CSV or JSON for backup and analysis
 - **Data Import (JSON)**: Dry-run and import previously exported JSON to recover history after resets or migrations

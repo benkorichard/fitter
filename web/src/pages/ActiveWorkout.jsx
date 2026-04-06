@@ -113,6 +113,26 @@ export default function ActiveWorkout() {
   const allSetsLogged = setsForCurrent.length >= (currentPE?.sets || 0)
   const isResting = restSeconds !== null
 
+  function getDoneCount(pe) {
+    return (loggedSets[pe.id] || []).length
+  }
+
+  function getSupersetPairIndex(idx) {
+    if (!plan || !plan.plan_exercises || plan.plan_exercises.length < 2) return null
+    const candidate = idx % 2 === 0 ? idx + 1 : idx - 1
+    if (candidate < 0 || candidate >= plan.plan_exercises.length) return null
+    return candidate
+  }
+
+  function getNextIncompleteExerciseIndex() {
+    if (!plan) return null
+    for (let i = 0; i < plan.plan_exercises.length; i++) {
+      const pe = plan.plan_exercises[i]
+      if (getDoneCount(pe) < pe.sets) return i
+    }
+    return null
+  }
+
   function adjustNumberValue(value, delta, { min = -Infinity, max = Infinity, step = 1, decimals = 0 } = {}) {
     const current = value === '' ? 0 : parseFloat(value)
     const safe = Number.isFinite(current) ? current : 0
@@ -159,7 +179,33 @@ export default function ActiveWorkout() {
       [currentPE.id]: [...(prev[currentPE.id] || []), { set_number: setNumber, reps_done: reps, weight_used: weight, rpe: rpe, rir: rir, is_warmup: isWarmup }],
     }))
     soundPlayedRef.current.clear() // Reset sound tracking for new rest period
-    setRestSeconds(plan.rest_time)
+
+    const scheme = plan.scheme_type || 'straight'
+    if (scheme === 'superset') {
+      const pairIdx = getSupersetPairIndex(currentExIdx)
+      const pairPe = pairIdx !== null ? plan.plan_exercises[pairIdx] : null
+
+      if (pairPe) {
+        const pairDone = getDoneCount(pairPe)
+        const pairNeedsThisRound = pairDone < setNumber && pairDone < pairPe.sets
+
+        if (pairNeedsThisRound) {
+          goToExercise(pairIdx)
+          setRestSeconds(null)
+        } else {
+          setRestSeconds(plan.rest_time)
+          const nextIncomplete = getNextIncompleteExerciseIndex()
+          if (nextIncomplete !== null && nextIncomplete !== currentExIdx) {
+            goToExercise(nextIncomplete)
+          }
+        }
+      } else {
+        setRestSeconds(plan.rest_time)
+      }
+    } else {
+      setRestSeconds(plan.rest_time)
+    }
+
     setIsWarmup(false) // Reset warmup flag for next set
     setCurrentRpe('')
     setCurrentRir('')
@@ -261,6 +307,11 @@ export default function ActiveWorkout() {
             <p className="target-info">
               Target: <strong>{currentPE.sets} sets × {currentPE.reps} reps @ {currentPE.weight} kg</strong>
             </p>
+            {plan.scheme_type === 'superset' && (
+              <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '-0.5rem', marginBottom: '0.9rem' }}>
+                Superset mode enabled (adjacent exercise pairs: 1-2, 3-4, ...). Auto-switch active.
+              </p>
+            )}
 
             {setsForCurrent.length > 0 && (
               <table style={{ marginBottom: '1rem' }}>

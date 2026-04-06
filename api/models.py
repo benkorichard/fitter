@@ -20,6 +20,7 @@ class WorkoutPlan(Base):
     name = Column(String(100), nullable=False)
     description = Column(String(500), default="")
     rest_time = Column(Integer, default=60)  # seconds between sets
+    scheme_type = Column(String(20), default="straight")  # straight | superset
     plan_exercises = relationship(
         "PlanExercise",
         back_populates="plan",
@@ -37,6 +38,9 @@ class PlanExercise(Base):
     sets = Column(Integer, default=3)
     reps = Column(Integer, default=10)
     weight = Column(Float, default=0.0)
+    scheme_type = Column(String(20), default="straight")  # straight | superset
+    superset_group = Column(String(50), default="")
+    superset_order = Column(Integer, default=0)
     order = Column(Integer, default=0)
 
     plan = relationship("WorkoutPlan", back_populates="plan_exercises")
