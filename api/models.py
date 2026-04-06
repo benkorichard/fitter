@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -21,6 +21,7 @@ class WorkoutPlan(Base):
     description = Column(String(500), default="")
     rest_time = Column(Integer, default=60)  # seconds between sets
     scheme_type = Column(String(20), default="straight")  # straight | superset
+    archived = Column(Boolean, default=False)
     plan_exercises = relationship(
         "PlanExercise",
         back_populates="plan",
@@ -73,6 +74,7 @@ class WorkoutSession(Base):
     started_at = Column(DateTime, default=datetime.datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     notes = Column(String(1000), default="")  # Session notes
+    exclude_from_analytics = Column(Boolean, default=False)
     logged_sets = relationship(
         "SessionSet",
         back_populates="session",
