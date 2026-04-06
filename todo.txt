@@ -3,10 +3,10 @@ High priority
 - [x] Basic test coverage
   - API smoke tests for core flows: create session, log sets, finish session, summary/progress.
 
-- [ ] Data quality improvements
+- [x] Data quality improvements
   - Add optional RPE/RIR fields per set.
 
-- [ ] Better progression analytics
+- [x] Better progression analytics
   - Rolling bests (30/90 day), plateau detection, and new-PR highlights.
 
 - [ ] Program templates

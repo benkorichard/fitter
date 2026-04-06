@@ -86,6 +86,8 @@ class SessionSet(Base):
     set_number = Column(Integer, nullable=False)
     reps_done = Column(Integer, nullable=False)
     weight_used = Column(Float, nullable=False)
+    rpe = Column(Float, nullable=True)
+    rir = Column(Float, nullable=True)
     is_warmup = Column(Integer, default=False)  # 0=False, 1=True for warmup sets
 
     session = relationship("WorkoutSession", back_populates="logged_sets")

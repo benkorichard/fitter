@@ -7,8 +7,10 @@ A web application for tracking workout progress through training programs, with 
 - **Sessions**: Create reusable workout session templates with custom exercises, sets, reps, and weights
 - **Programs**: Organize sessions into training programs to track long-term progression
 - **Progress Tracking**: View detailed progression data across all sessions in a program, including reps/weight progression charts
+- **Progress Insights**: Rolling best trend, plateau detection, and PR highlights
 - **Cycle Comparison**: Compare two program cycles side-by-side with per-set performance deltas
 - **Warmup Set Handling**: Mark sets as warmup so they are excluded from progression/PR metrics
+- **Set Quality Metrics**: Optional RPE/RIR logging per set
 - **Active Workout**: Log sets during workouts with configurable rest timers and audio cues
 - **Session Notes**: Save notes per workout session and edit them from the summary view
 - **1RM Calculator**: Estimate one-rep max from manual input and from logged workout data
@@ -120,6 +122,8 @@ Example payload:
 			"set_number": 1,
 			"reps_done": 8,
 			"weight_used": 62.5,
+			"rpe": 8.5,
+			"rir": 1.5,
 			"is_warmup": false
 		}
 	],

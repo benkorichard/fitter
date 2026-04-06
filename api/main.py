@@ -211,9 +211,12 @@ def get_program_progress(program_id: int, db: Session = Depends(get_db)):
                 schemas.SetProgressEntry(
                     session_id=session.id,
                     session_date=session.started_at,
+                    exercise_name=s.plan_exercise.exercise.name if s.plan_exercise and s.plan_exercise.exercise else "",
                     set_number=s.set_number,
                     reps_done=s.reps_done,
                     weight_used=s.weight_used,
+                    rpe=s.rpe,
+                    rir=s.rir,
                 )
             )
 
@@ -376,6 +379,8 @@ def _build_export_rows(db: Session):
             "set_number": s.set_number,
             "reps_done": s.reps_done,
             "weight_used": s.weight_used,
+            "rpe": s.rpe,
+            "rir": s.rir,
             "is_warmup": s.is_warmup,
         })
     return rows
@@ -385,7 +390,7 @@ def _build_export_rows(db: Session):
 def export_csv(db: Session = Depends(get_db)):
     rows = _build_export_rows(db)
     fieldnames = ["session_id", "session_date", "session_notes", "plan_name", "program_name",
-                  "exercise_name", "muscle_group", "set_number", "reps_done", "weight_used", "is_warmup"]
+                  "exercise_name", "muscle_group", "set_number", "reps_done", "weight_used", "rpe", "rir", "is_warmup"]
 
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fieldnames)
@@ -612,6 +617,8 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
                 set_number=max(1, _to_int(row.get("set_number"), 1)),
                 reps_done=max(0, _to_int(row.get("reps_done"), 0)),
                 weight_used=max(0.0, _to_float(row.get("weight_used"), 0.0)),
+                rpe=_to_float(row.get("rpe"), None) if row.get("rpe") is not None else None,
+                rir=_to_float(row.get("rir"), None) if row.get("rir") is not None else None,
                 is_warmup=_to_bool(row.get("is_warmup", False)),
             )
             db.add(logged_set)

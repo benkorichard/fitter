@@ -27,6 +27,8 @@ export default function ActiveWorkout() {
   const [restSeconds, setRestSeconds] = useState(null)
   const [currentReps, setCurrentReps] = useState('')
   const [currentWeight, setCurrentWeight] = useState('')
+  const [currentRpe, setCurrentRpe] = useState('')
+  const [currentRir, setCurrentRir] = useState('')
   const [finishing, setFinishing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -108,10 +110,13 @@ export default function ActiveWorkout() {
   const currentPE = plan?.plan_exercises[currentExIdx]
   const setsForCurrent = currentPE ? (loggedSets[currentPE.id] || []) : []
   const allSetsLogged = setsForCurrent.length >= (currentPE?.sets || 0)
+  const isResting = restSeconds !== null
 
   async function logSet() {
     const reps = parseInt(currentReps)
     const weight = parseFloat(currentWeight) || 0
+    const rpe = currentRpe === '' ? null : parseFloat(currentRpe)
+    const rir = currentRir === '' ? null : parseFloat(currentRir)
     if (!currentPE || isNaN(reps) || reps < 1) return
 
     const setNumber = setsForCurrent.length + 1
@@ -120,16 +125,20 @@ export default function ActiveWorkout() {
       set_number: setNumber,
       reps_done: reps,
       weight_used: weight,
+      rpe: rpe,
+      rir: rir,
       is_warmup: isWarmup,
     })
 
     setLoggedSets(prev => ({
       ...prev,
-      [currentPE.id]: [...(prev[currentPE.id] || []), { set_number: setNumber, reps_done: reps, weight_used: weight, is_warmup: isWarmup }],
+      [currentPE.id]: [...(prev[currentPE.id] || []), { set_number: setNumber, reps_done: reps, weight_used: weight, rpe: rpe, rir: rir, is_warmup: isWarmup }],
     }))
     soundPlayedRef.current.clear() // Reset sound tracking for new rest period
     setRestSeconds(plan.rest_time)
     setIsWarmup(false) // Reset warmup flag for next set
+    setCurrentRpe('')
+    setCurrentRir('')
   }
 
   function goToExercise(idx) {
@@ -232,7 +241,7 @@ export default function ActiveWorkout() {
             {setsForCurrent.length > 0 && (
               <table style={{ marginBottom: '1rem' }}>
                 <thead>
-                  <tr><th>Set</th><th>Reps done</th><th>Weight</th></tr>
+                  <tr><th>Set</th><th>Reps done</th><th>Weight</th><th>RPE</th><th>RIR</th></tr>
                 </thead>
                 <tbody>
                   {setsForCurrent.map(s => (
@@ -240,6 +249,8 @@ export default function ActiveWorkout() {
                       <td>{s.set_number}</td>
                       <td>{s.reps_done}</td>
                       <td>{s.weight_used} kg</td>
+                      <td>{s.rpe ?? '—'}</td>
+                      <td>{s.rir ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -249,20 +260,7 @@ export default function ActiveWorkout() {
             {!allSetsLogged && (
               <div className="log-set">
                 <h3>Log set {setsForCurrent.length + 1} of {currentPE.sets}</h3>
-                {restSeconds !== null ? (
-                  <div className="rest-timer">
-                    Rest: <strong>{formatTime(restSeconds)}</strong>
-                    {restSeconds <= 5 && (
-                      <span style={{ color: 'var(--danger)', marginLeft: '0.5rem', fontWeight: 700 }}>
-                        {restSeconds}
-                      </span>
-                    )}
-                    <button className="btn-secondary" onClick={() => {
-                      soundPlayedRef.current.clear()
-                      setRestSeconds(null)
-                    }}>Skip</button>
-                  </div>
-                ) : (
+                <div className={`log-set-body ${isResting ? 'is-resting' : ''}`}>
                   <div className="set-form">
                     <label>
                       Reps
@@ -271,6 +269,7 @@ export default function ActiveWorkout() {
                         min="1"
                         value={currentReps}
                         onChange={e => setCurrentReps(e.target.value)}
+                        disabled={isResting}
                       />
                     </label>
                     <label>
@@ -281,19 +280,62 @@ export default function ActiveWorkout() {
                         step="0.5"
                         value={currentWeight}
                         onChange={e => setCurrentWeight(e.target.value)}
+                        disabled={isResting}
                       />
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label>
+                      RPE (optional)
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        step="0.5"
+                        value={currentRpe}
+                        onChange={e => setCurrentRpe(e.target.value)}
+                        disabled={isResting}
+                      />
+                    </label>
+                    <label>
+                      RIR (optional)
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={currentRir}
+                        onChange={e => setCurrentRir(e.target.value)}
+                        disabled={isResting}
+                      />
+                    </label>
+                    <label className="warmup-toggle">
                       <input
                         type="checkbox"
                         checked={isWarmup}
                         onChange={e => setIsWarmup(e.target.checked)}
+                        disabled={isResting}
                       />
                       <span>Warmup set (exclude from progression)</span>
                     </label>
-                    <button className="btn-primary" onClick={logSet}>✔ Log Set</button>
+                    <button className="btn-primary" onClick={logSet} disabled={isResting}>✔ Log Set</button>
                   </div>
-                )}
+
+                  {isResting && (
+                    <div className="rest-overlay">
+                      <div className="rest-timer">
+                        Rest: <strong>{formatTime(restSeconds)}</strong>
+                        {restSeconds <= 5 && (
+                          <span style={{ color: 'var(--danger)', marginLeft: '0.5rem', fontWeight: 700 }}>
+                            {restSeconds}
+                          </span>
+                        )}
+                        <button className="btn-secondary" onClick={() => {
+                          soundPlayedRef.current.clear()
+                          setRestSeconds(null)
+                        }}>Skip</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

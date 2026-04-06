@@ -82,6 +82,8 @@ class SessionSetCreate(BaseModel):
     set_number: int
     reps_done: int
     weight_used: float
+    rpe: Optional[float] = None
+    rir: Optional[float] = None
     is_warmup: bool = False
 
 
@@ -115,9 +117,12 @@ class SessionSummary(BaseModel):
 class SetProgressEntry(BaseModel):
     session_id: int
     session_date: datetime.datetime
+    exercise_name: str = ""
     set_number: int
     reps_done: int
     weight_used: float
+    rpe: Optional[float] = None
+    rir: Optional[float] = None
 
 
 class ProgramProgress(BaseModel):
