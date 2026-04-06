@@ -37,7 +37,7 @@ Medium priority
 - [ ] Lightweight observability
   - Request logging, simple error tracking, and health checks.
 
-- [ ] Program status persistence bug
+- [x] Program status persistence bug
   - In Program Edit, saving status (active/completed/paused) is not persisted and reverts to active.
 
 - [ ] Session deletion/cancel capability

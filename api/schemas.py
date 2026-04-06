@@ -57,11 +57,11 @@ class TrainingProgramCreate(BaseModel):
     description: str = ""
     goal: str = ""
     exercise: str = ""
+    status: str = "active"
 
 
 class TrainingProgram(TrainingProgramCreate):
     id: int
-    status: str = "active"
     created_at: datetime.datetime
     model_config = {"from_attributes": True}
 
