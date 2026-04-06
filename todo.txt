@@ -1,9 +1,5 @@
 High priority
 
-- [ ] Reliability: automatic backups
-  - Nightly copy of the SQLite DB volume to a timestamped backup folder.
-  - Add a restore script.
-
 - [x] Basic test coverage
   - API smoke tests for core flows: create session, log sets, finish session, summary/progress.
 
@@ -24,7 +20,7 @@ Medium priority
 - [ ] API documentation polish
   - Improve schema examples and endpoint descriptions.
 
-- [ ] Import capability (CSV/JSON)
+- [x] Import capability (CSV/JSON)
   - Add import with validation and dry-run preview.
 
 - [ ] Active workout UX refinement

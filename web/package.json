@@ -1,7 +1,7 @@
 {
   "name": "fitter-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "v0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1,8 +1,9 @@
 import datetime
 import csv
 import io
+import json
 from collections import defaultdict
-from typing import List
+from typing import Any, Dict, List
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -403,11 +404,240 @@ def export_csv(db: Session = Depends(get_db)):
 @app.get("/api/export/json")
 def export_json(db: Session = Depends(get_db)):
     rows = _build_export_rows(db)
-    import json
-    payload = json.dumps(rows, indent=2)
+    payload = json.dumps(
+        {
+            "format_version": 1,
+            "created_at": datetime.datetime.utcnow().isoformat(),
+            "rows": rows,
+        },
+        indent=2,
+    )
     filename = f"fitter-export-{datetime.date.today()}.json"
     return StreamingResponse(
         iter([payload]),
         media_type="application/json",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+def _to_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return False
+
+
+def _to_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_session_date(value: Any) -> datetime.datetime:
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.datetime.utcnow()
+
+
+def _extract_import_rows(payload: Any) -> List[Dict[str, Any]]:
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = payload.get("rows", [])
+    else:
+        rows = []
+
+    if not isinstance(rows, list):
+        raise HTTPException(400, "Invalid payload. Expected a JSON array or { rows: [...] }.")
+
+    normalized: List[Dict[str, Any]] = []
+    for r in rows:
+        if isinstance(r, dict):
+            normalized.append(r)
+    return normalized
+
+
+@app.post("/api/import/json")
+def import_json(payload: dict, db: Session = Depends(get_db)):
+    rows = _extract_import_rows(payload)
+    if not rows:
+        raise HTTPException(400, "No rows found in import payload")
+
+    dry_run = _to_bool(payload.get("dry_run", False))
+    clear_existing = _to_bool(payload.get("clear_existing", False))
+
+    # Caches to avoid duplicate lookups/creates during import.
+    exercise_cache: Dict[str, models.Exercise] = {
+        (e.name or "").strip().lower(): e for e in db.query(models.Exercise).all()
+    }
+    plan_cache: Dict[str, models.WorkoutPlan] = {
+        (p.name or "").strip().lower(): p for p in db.query(models.WorkoutPlan).all()
+    }
+    program_cache: Dict[str, models.TrainingProgram] = {
+        (p.name or "").strip().lower(): p for p in db.query(models.TrainingProgram).all()
+    }
+    plan_exercise_cache: Dict[tuple, models.PlanExercise] = {}
+    session_cache: Dict[str, models.WorkoutSession] = {}
+
+    created = {
+        "exercises": 0,
+        "plans": 0,
+        "programs": 0,
+        "sessions": 0,
+        "sets": 0,
+        "plan_exercises": 0,
+    }
+
+    try:
+        if clear_existing:
+            db.query(models.SessionSet).delete()
+            db.query(models.WorkoutSession).delete()
+            db.query(models.PlanExercise).delete()
+            db.query(models.TrainingProgram).delete()
+            db.query(models.WorkoutPlan).delete()
+            db.query(models.Exercise).delete()
+            db.flush()
+            exercise_cache.clear()
+            plan_cache.clear()
+            program_cache.clear()
+
+        for idx, row in enumerate(rows):
+            exercise_name = (row.get("exercise_name") or "Unknown Exercise").strip()
+            muscle_group = (row.get("muscle_group") or "").strip()
+
+            ex_key = exercise_name.lower()
+            exercise = exercise_cache.get(ex_key)
+            if not exercise:
+                exercise = models.Exercise(
+                    name=exercise_name,
+                    muscle_group=muscle_group,
+                    description="",
+                )
+                db.add(exercise)
+                db.flush()
+                exercise_cache[ex_key] = exercise
+                created["exercises"] += 1
+
+            plan_name = (row.get("plan_name") or "Imported Plan").strip()
+            plan_key = plan_name.lower()
+            plan = plan_cache.get(plan_key)
+            if not plan:
+                plan = models.WorkoutPlan(
+                    name=plan_name,
+                    description="Imported from JSON",
+                    rest_time=60,
+                )
+                db.add(plan)
+                db.flush()
+                plan_cache[plan_key] = plan
+                created["plans"] += 1
+
+            program_name = (row.get("program_name") or "").strip()
+            program = None
+            if program_name:
+                program_key = program_name.lower()
+                program = program_cache.get(program_key)
+                if not program:
+                    program = models.TrainingProgram(
+                        name=program_name,
+                        description="Imported from JSON",
+                        goal="",
+                        exercise=exercise.name,
+                        status="active",
+                    )
+                    db.add(program)
+                    db.flush()
+                    program_cache[program_key] = program
+                    created["programs"] += 1
+
+            pe_key = (plan.id, exercise.id)
+            plan_exercise = plan_exercise_cache.get(pe_key)
+            if not plan_exercise:
+                plan_exercise = (
+                    db.query(models.PlanExercise)
+                    .filter(
+                        models.PlanExercise.plan_id == plan.id,
+                        models.PlanExercise.exercise_id == exercise.id,
+                    )
+                    .first()
+                )
+                if not plan_exercise:
+                    plan_exercise = models.PlanExercise(
+                        plan_id=plan.id,
+                        exercise_id=exercise.id,
+                        sets=3,
+                        reps=10,
+                        weight=_to_float(row.get("weight_used"), 0.0),
+                        order=0,
+                    )
+                    db.add(plan_exercise)
+                    db.flush()
+                    created["plan_exercises"] += 1
+                plan_exercise_cache[pe_key] = plan_exercise
+
+            source_session_id = row.get("session_id")
+            source_session_key = str(source_session_id) if source_session_id is not None else f"generated-{idx}"
+            session = session_cache.get(source_session_key)
+            if not session:
+                started_at = _parse_session_date(row.get("session_date"))
+                session = models.WorkoutSession(
+                    plan_id=plan.id,
+                    program_id=program.id if program else None,
+                    started_at=started_at,
+                    finished_at=started_at,
+                    notes=(row.get("session_notes") or "").strip(),
+                )
+                db.add(session)
+                db.flush()
+                session_cache[source_session_key] = session
+                created["sessions"] += 1
+
+            logged_set = models.SessionSet(
+                session_id=session.id,
+                plan_exercise_id=plan_exercise.id,
+                set_number=max(1, _to_int(row.get("set_number"), 1)),
+                reps_done=max(0, _to_int(row.get("reps_done"), 0)),
+                weight_used=max(0.0, _to_float(row.get("weight_used"), 0.0)),
+                is_warmup=_to_bool(row.get("is_warmup", False)),
+            )
+            db.add(logged_set)
+            created["sets"] += 1
+
+        if dry_run:
+            db.rollback()
+            return {
+                "ok": True,
+                "dry_run": True,
+                "clear_existing": clear_existing,
+                "rows_received": len(rows),
+                "would_create": created,
+            }
+
+        db.commit()
+        return {
+            "ok": True,
+            "dry_run": False,
+            "clear_existing": clear_existing,
+            "rows_received": len(rows),
+            "created": created,
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(400, f"Import failed: {exc}") from exc

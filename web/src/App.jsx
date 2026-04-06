@@ -13,6 +13,8 @@ import Summary from './pages/Summary'
 import Exercises from './pages/Exercises'
 
 export default function App() {
+  const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
+
   return (
     <BrowserRouter>
       <Header />
@@ -33,6 +35,7 @@ export default function App() {
           <Route path="/exercises" element={<Exercises />} />
         </Routes>
       </main>
+      <footer className="app-footer">{appVersion}</footer>
     </BrowserRouter>
   )
 }
