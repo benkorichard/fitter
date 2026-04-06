@@ -6,23 +6,38 @@ export default function Plans() {
   const [plans, setPlans] = useState([])
   const [programs, setPrograms] = useState([])
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('active')
   const [selectedPlan, setSelectedPlan] = useState(null)
   const [selectedProgram, setSelectedProgram] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
-    Promise.all([api.getPlans(), api.getPrograms()])
+    const includeArchived = filter !== 'active'
+    Promise.all([api.getPlans(includeArchived), api.getPrograms()])
       .then(([plansData, programsData]) => {
         setPlans(plansData)
         setPrograms(programsData.filter(p => p.status === 'active'))
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [filter])
 
   async function handleDelete(id) {
     if (!window.confirm('Delete this plan?')) return
     await api.deletePlan(id)
     setPlans(prev => prev.filter(p => p.id !== id))
+  }
+
+  async function handleArchive(id, isArchived) {
+    try {
+      if (isArchived) {
+        await api.unarchivePlan(id)
+      } else {
+        await api.archivePlan(id)
+      }
+      setPlans(prev => prev.map(p => (p.id === id ? { ...p, archived: !isArchived } : p)))
+    } catch (e) {
+      alert('Error: ' + e.message)
+    }
   }
 
   function startWorkout(planId) {
@@ -41,21 +56,36 @@ export default function Plans() {
   if (loading) return <div className="loading">Loading plans…</div>
 
   const showModal = selectedPlan !== null && programs.length > 0
+  const visiblePlans = plans.filter(plan => {
+    if (filter === 'archived') return !!plan.archived
+    if (filter === 'all') return true
+    return !plan.archived
+  })
 
   return (
     <div>
       <div className="page-actions">
         <h1>Workout Sessions</h1>
-        <Link to="/plans/new">
-          <button className="btn-primary">+ New Session</button>
-        </Link>
+        <div className="flex-gap">
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+            Filter:
+            <select value={filter} onChange={e => setFilter(e.target.value)}>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <Link to="/plans/new">
+            <button className="btn-primary">+ New Session</button>
+          </Link>
+        </div>
       </div>
 
-      {plans.length === 0 && (
+      {visiblePlans.length === 0 && (
         <div className="empty">No sessions yet. Create your first workout session template to get started.</div>
       )}
 
-      {plans.map(plan => (
+      {visiblePlans.map(plan => (
         <div key={plan.id} className="plan-card">
           <div className="plan-card-info">
             <h2>{plan.name}</h2>
@@ -66,18 +96,24 @@ export default function Plans() {
                 <> — {plan.plan_exercises.map(pe => pe.exercise.name).join(', ')}</>
               )}
             </p>
+            {plan.archived && <p className="plan-card-meta">Archived</p>}
           </div>
           <div className="plan-card-actions">
             <button
               className="btn-primary"
               onClick={() => startWorkout(plan.id)}
-              disabled={plan.plan_exercises.length === 0}
+              disabled={plan.plan_exercises.length === 0 || plan.archived}
             >
               ▶ Start
             </button>
             <Link to={`/plans/${plan.id}/edit`}>
               <button className="btn-secondary">Edit</button>
             </Link>
+            {plan.archived ? (
+              <button className="btn-secondary" onClick={() => handleArchive(plan.id, true)}>Unarchive</button>
+            ) : (
+              <button className="btn-secondary" onClick={() => handleArchive(plan.id, false)}>Archive</button>
+            )}
             <button className="btn-danger" onClick={() => handleDelete(plan.id)}>Delete</button>
           </div>
         </div>

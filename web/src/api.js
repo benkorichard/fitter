@@ -21,11 +21,16 @@ export const updateExercise = (id, data) => request('PUT', `/exercises/${id}`, d
 export const deleteExercise = (id) => request('DELETE', `/exercises/${id}`)
 
 // Plans
-export const getPlans = () => request('GET', '/plans')
+export const getPlans = (includeArchived = false) => {
+  const params = includeArchived ? '?include_archived=true' : ''
+  return request('GET', `/plans${params}`)
+}
 export const getPlan = (id) => request('GET', `/plans/${id}`)
 export const createPlan = (data) => request('POST', '/plans', data)
 export const updatePlan = (id, data) => request('PUT', `/plans/${id}`, data)
 export const deletePlan = (id) => request('DELETE', `/plans/${id}`)
+export const archivePlan = (id) => request('PUT', `/plans/${id}/archive`)
+export const unarchivePlan = (id) => request('PUT', `/plans/${id}/unarchive`)
 
 // Plan exercises
 export const addPlanExercise = (planId, data) => request('POST', `/plans/${planId}/exercises`, data)

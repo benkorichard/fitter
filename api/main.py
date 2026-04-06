@@ -26,6 +26,7 @@ def _sqlite_add_missing_columns():
     table_column_sql = {
         "workout_plans": {
             "scheme_type": "ALTER TABLE workout_plans ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
+            "archived": "ALTER TABLE workout_plans ADD COLUMN archived INTEGER DEFAULT 0",
         },
         "plan_exercises": {
             "scheme_type": "ALTER TABLE plan_exercises ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
@@ -117,8 +118,11 @@ def _sanitize_plan_for_response(plan: models.WorkoutPlan) -> models.WorkoutPlan:
     return plan
 
 @app.get("/api/plans", response_model=List[schemas.WorkoutPlan])
-def list_plans(db: Session = Depends(get_db)):
-    plans = db.query(models.WorkoutPlan).all()
+def list_plans(include_archived: bool = False, db: Session = Depends(get_db)):
+    plans_query = db.query(models.WorkoutPlan)
+    if not include_archived:
+        plans_query = plans_query.filter(models.WorkoutPlan.archived == False)
+    plans = plans_query.all()
     return [_sanitize_plan_for_response(p) for p in plans]
 
 
@@ -158,6 +162,28 @@ def delete_plan(plan_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Plan not found")
     db.delete(plan)
     db.commit()
+
+
+@app.put("/api/plans/{plan_id}/archive", response_model=schemas.WorkoutPlan)
+def archive_plan(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.get(models.WorkoutPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    plan.archived = True
+    db.commit()
+    db.refresh(plan)
+    return _sanitize_plan_for_response(plan)
+
+
+@app.put("/api/plans/{plan_id}/unarchive", response_model=schemas.WorkoutPlan)
+def unarchive_plan(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.get(models.WorkoutPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    plan.archived = False
+    db.commit()
+    db.refresh(plan)
+    return _sanitize_plan_for_response(plan)
 
 
 # ─────────────────────────── Plan Exercises ───────────────────────

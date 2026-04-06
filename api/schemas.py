@@ -47,6 +47,7 @@ class WorkoutPlanCreate(BaseModel):
 class WorkoutPlan(WorkoutPlanCreate):
     id: int
     plan_exercises: List[PlanExercise] = []
+    archived: bool = False
     model_config = {"from_attributes": True}
 
 
