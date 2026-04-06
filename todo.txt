@@ -40,7 +40,7 @@ Medium priority
 - [x] Program status persistence bug
   - In Program Edit, saving status (active/completed/paused) is not persisted and reverts to active.
 
-- [ ] Session deletion/cancel capability
+- [x] Session deletion/cancel capability
   - Allow removing a workout session from a program (e.g., aborted due to injury/early stop).
   - Add confirmation UX to avoid accidental deletion.
 

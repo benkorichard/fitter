@@ -321,6 +321,15 @@ def update_session(session_id: int, body: dict, db: Session = Depends(get_db)):
     return session
 
 
+@app.delete("/api/sessions/{session_id}", status_code=204)
+def delete_session(session_id: int, db: Session = Depends(get_db)):
+    session = db.get(models.WorkoutSession, session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    db.delete(session)
+    db.commit()
+
+
 @app.post("/api/sessions/{session_id}/sets", response_model=schemas.SessionSet, status_code=201)
 def log_set(session_id: int, body: schemas.SessionSetCreate, db: Session = Depends(get_db)):
     if not db.get(models.WorkoutSession, session_id):
@@ -353,6 +362,8 @@ def get_summary(session_id: int, db: Session = Depends(get_db)):
 
     for pe_id, sets in grouped.items():
         pe = db.get(models.PlanExercise, pe_id)
+        if not pe or not pe.exercise:  # Skip orphaned relations
+            continue
         total_reps = sum(s.reps_done for s in sets)
         total_weight = sum(s.reps_done * s.weight_used for s in sets)
         grand_total += total_weight
@@ -515,7 +526,7 @@ def get_best_sets(db: Session = Depends(get_db)):
     best: dict = {}
     for s in sets:
         pe = db.get(models.PlanExercise, s.plan_exercise_id)
-        if not pe:
+        if not pe or not pe.exercise:
             continue
         ex = pe.exercise
         key = ex.id
@@ -548,8 +559,8 @@ def _build_export_rows(db: Session):
             "session_notes": session.notes if session else "",
             "plan_name": plan.name if plan else "",
             "program_name": program.name if program else "",
-            "exercise_name": pe.exercise.name if pe else "",
-            "muscle_group": pe.exercise.muscle_group if pe else "",
+            "exercise_name": pe.exercise.name if pe and pe.exercise else "",
+            "muscle_group": pe.exercise.muscle_group if pe and pe.exercise else "",
             "set_number": s.set_number,
             "reps_done": s.reps_done,
             "weight_used": s.weight_used,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import * as api from '../api'
 
 function formatDuration(seconds) {
@@ -14,6 +14,7 @@ function formatDuration(seconds) {
 
 export default function Summary() {
   const { sessionId } = useParams()
+  const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -41,6 +42,18 @@ export default function Summary() {
       alert('Error saving notes: ' + e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function deleteCurrentSession() {
+    const confirmed = window.confirm('Delete this session? This will remove its logged sets from history and analytics.')
+    if (!confirmed) return
+
+    try {
+      await api.deleteSession(sessionId)
+      navigate('/programs')
+    } catch (e) {
+      alert('Error deleting session: ' + e.message)
     }
   }
 
@@ -148,6 +161,7 @@ export default function Summary() {
 
       <div className="flex-gap mt-3">
         <Link to="/"><button className="btn-primary">Back to Sessions</button></Link>
+        <button className="btn-danger" onClick={deleteCurrentSession}>Delete Session</button>
       </div>
     </div>
   )
