@@ -49,3 +49,10 @@ export const updateSessionNotes = (id, notes) => request('PUT', `/sessions/${id}
 
 // Stats
 export const getBestSets = () => request('GET', '/stats/best-sets')
+
+// Import / export
+export const importJsonData = (rows, options = {}) => request('POST', '/import/json', {
+  rows,
+  dry_run: Boolean(options.dryRun),
+  clear_existing: Boolean(options.clearExisting),
+})

@@ -13,12 +13,13 @@ A web application for tracking workout progress through training programs, with 
 - **Session Notes**: Save notes per workout session and edit them from the summary view
 - **1RM Calculator**: Estimate one-rep max from manual input and from logged workout data
 - **Data Export**: Export all logged sets as CSV or JSON for backup and analysis
+- **Data Import (JSON)**: Dry-run and import previously exported JSON to recover history after resets or migrations
 - **Session History**: Access past workout summaries with total reps, weight moved, and duration
 - **Exercise Library**: Manage your exercise database with muscle groups and descriptions
 
 ## Tech Stack
 
-- **Frontend**: React + Vite
+- **Frontend**: React + Vite (build tooling)
 - **Backend**: Python + FastAPI
 - **Web Serving (Prod)**: Nginx (serving built static files)
 - **Database**: SQLite
@@ -83,3 +84,63 @@ API_HOST=my-fitter-api
 - All data is stored locally in the SQLite database
 - Database volume persists between container restarts
 - Reset database: `docker compose down -v && docker compose up --build`
+
+## Manual Backup and Restore
+
+### Export via API
+
+- JSON: `GET /api/export/json`
+- CSV: `GET /api/export/csv`
+
+Examples:
+
+```bash
+curl -L http://localhost:8000/api/export/json -o fitter-export.json
+curl -L http://localhost:8000/api/export/csv -o fitter-export.csv
+```
+
+### Import via API
+
+- JSON import endpoint: `POST /api/import/json`
+- Supports:
+	- `dry_run` (validate only, no writes)
+	- `clear_existing` (wipe current data before import)
+
+Example payload:
+
+```json
+{
+	"rows": [
+		{
+			"session_id": 1,
+			"session_date": "2026-04-06T10:00:00",
+			"plan_name": "Push Day",
+			"program_name": "Bench Cycle 1",
+			"exercise_name": "Bench Press",
+			"set_number": 1,
+			"reps_done": 8,
+			"weight_used": 62.5,
+			"is_warmup": false
+		}
+	],
+	"dry_run": true,
+	"clear_existing": false
+}
+```
+
+### Recommended upgrade safety flow
+
+1. Export JSON backup.
+2. Upgrade/redeploy.
+3. If needed, reset DB and import JSON (dry-run first, then real import).
+
+## Recovery and Compatibility
+
+- Recommended safety flow before upgrades: export JSON, then upgrade.
+- If the database must be reset, import your JSON backup from the Export page.
+- Import supports both:
+  - legacy exports (raw JSON array of rows)
+  - current exports (`{ format_version, created_at, rows }`)
+- Unknown/new fields are ignored during import, and missing fields use safe defaults.
+
+This provides practical backward compatibility for historical workout data, even when schema changes require a fresh database.
