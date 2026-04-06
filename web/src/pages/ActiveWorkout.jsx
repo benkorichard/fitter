@@ -109,8 +109,32 @@ export default function ActiveWorkout() {
 
   const currentPE = plan?.plan_exercises[currentExIdx]
   const setsForCurrent = currentPE ? (loggedSets[currentPE.id] || []) : []
+  const previousSet = setsForCurrent.length > 0 ? setsForCurrent[setsForCurrent.length - 1] : null
   const allSetsLogged = setsForCurrent.length >= (currentPE?.sets || 0)
   const isResting = restSeconds !== null
+
+  function adjustNumberValue(value, delta, { min = -Infinity, max = Infinity, step = 1, decimals = 0 } = {}) {
+    const current = value === '' ? 0 : parseFloat(value)
+    const safe = Number.isFinite(current) ? current : 0
+    const next = Math.max(min, Math.min(max, safe + delta * step))
+    return decimals > 0 ? next.toFixed(decimals) : String(Math.round(next))
+  }
+
+  function duplicatePreviousSet() {
+    if (!previousSet) return
+    setCurrentReps(String(previousSet.reps_done ?? currentReps))
+    setCurrentWeight(String(previousSet.weight_used ?? currentWeight))
+    setCurrentRpe(previousSet.rpe == null ? '' : String(previousSet.rpe))
+    setCurrentRir(previousSet.rir == null ? '' : String(previousSet.rir))
+    setIsWarmup(Boolean(previousSet.is_warmup))
+  }
+
+  function onSetFormSubmit(e) {
+    e.preventDefault()
+    if (!isResting) {
+      logSet()
+    }
+  }
 
   async function logSet() {
     const reps = parseInt(currentReps)
@@ -261,51 +285,67 @@ export default function ActiveWorkout() {
               <div className="log-set">
                 <h3>Log set {setsForCurrent.length + 1} of {currentPE.sets}</h3>
                 <div className={`log-set-body ${isResting ? 'is-resting' : ''}`}>
-                  <div className="set-form">
-                    <label>
+                  <form className="set-form" onSubmit={onSetFormSubmit}>
+                    <label className="number-field">
                       Reps
-                      <input
-                        type="number"
-                        min="1"
-                        value={currentReps}
-                        onChange={e => setCurrentReps(e.target.value)}
-                        disabled={isResting}
-                      />
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentReps(v => adjustNumberValue(v, -1, { min: 1, step: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={currentReps}
+                          onChange={e => setCurrentReps(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentReps(v => adjustNumberValue(v, 1, { min: 1, step: 1 }))} disabled={isResting}>+</button>
+                      </div>
                     </label>
-                    <label>
+                    <label className="number-field">
                       Weight (kg)
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={currentWeight}
-                        onChange={e => setCurrentWeight(e.target.value)}
-                        disabled={isResting}
-                      />
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentWeight(v => adjustNumberValue(v, -1, { min: 0, step: 0.5, decimals: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={currentWeight}
+                          onChange={e => setCurrentWeight(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentWeight(v => adjustNumberValue(v, 1, { min: 0, step: 0.5, decimals: 1 }))} disabled={isResting}>+</button>
+                      </div>
                     </label>
-                    <label>
+                    <label className="number-field">
                       RPE (optional)
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        step="0.5"
-                        value={currentRpe}
-                        onChange={e => setCurrentRpe(e.target.value)}
-                        disabled={isResting}
-                      />
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentRpe(v => adjustNumberValue(v, -1, { min: 1, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          step="0.5"
+                          value={currentRpe}
+                          onChange={e => setCurrentRpe(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentRpe(v => adjustNumberValue(v, 1, { min: 1, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>+</button>
+                      </div>
                     </label>
-                    <label>
+                    <label className="number-field">
                       RIR (optional)
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.5"
-                        value={currentRir}
-                        onChange={e => setCurrentRir(e.target.value)}
-                        disabled={isResting}
-                      />
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentRir(v => adjustNumberValue(v, -1, { min: 0, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          step="0.5"
+                          value={currentRir}
+                          onChange={e => setCurrentRir(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentRir(v => adjustNumberValue(v, 1, { min: 0, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>+</button>
+                      </div>
                     </label>
                     <label className="warmup-toggle">
                       <input
@@ -316,8 +356,19 @@ export default function ActiveWorkout() {
                       />
                       <span>Warmup set (exclude from progression)</span>
                     </label>
-                    <button className="btn-primary" onClick={logSet} disabled={isResting}>✔ Log Set</button>
-                  </div>
+                    <div className="set-actions">
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={duplicatePreviousSet}
+                        disabled={isResting || !previousSet}
+                        title={previousSet ? 'Copy reps/weight/RPE/RIR from previous set' : 'No previous set to copy'}
+                      >
+                        Duplicate Prev
+                      </button>
+                      <button type="submit" className="btn-primary" disabled={isResting}>✔ Log Set</button>
+                    </div>
+                  </form>
 
                   {isResting && (
                     <div className="rest-overlay">

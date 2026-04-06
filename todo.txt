@@ -23,7 +23,7 @@ Medium priority
 - [x] Import capability (CSV/JSON)
   - Add import with validation and dry-run preview.
 
-- [ ] Active workout UX refinement
+- [x] Active workout UX refinement
   - Keyboard-first logging, duplicate previous set, and quick increment/decrement controls.
 
 - [ ] Lightweight observability
