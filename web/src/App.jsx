@@ -8,6 +8,7 @@ import ProgramProgress from './pages/ProgramProgress'
 import CycleComparison from './pages/CycleComparison'
 import OneRMCalculator from './pages/OneRMCalculator'
 import Export from './pages/Export'
+import Consistency from './pages/Consistency'
 import ActiveWorkout from './pages/ActiveWorkout'
 import Summary from './pages/Summary'
 import Exercises from './pages/Exercises'
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/programs/:id/progress" element={<ProgramProgress />} />
           <Route path="/cycle-comparison" element={<CycleComparison />} />
           <Route path="/1rm" element={<OneRMCalculator />} />
+          <Route path="/consistency" element={<Consistency />} />
           <Route path="/export" element={<Export />} />
           <Route path="/workout/:planId" element={<ActiveWorkout />} />
           <Route path="/session/:sessionId/summary" element={<Summary />} />

@@ -78,7 +78,7 @@ export default function Export() {
           <li><code>session_id</code>, <code>session_date</code>, <code>session_notes</code></li>
           <li><code>plan_name</code>, <code>program_name</code></li>
           <li><code>exercise_name</code>, <code>muscle_group</code></li>
-          <li><code>set_number</code>, <code>reps_done</code>, <code>weight_used</code>, <code>is_warmup</code></li>
+          <li><code>set_number</code>, <code>reps_done</code>, <code>weight_used</code>, <code>rpe</code>, <code>rir</code>, <code>is_warmup</code></li>
         </ul>
       </div>
 

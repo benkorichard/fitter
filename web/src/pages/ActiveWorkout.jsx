@@ -27,6 +27,8 @@ export default function ActiveWorkout() {
   const [restSeconds, setRestSeconds] = useState(null)
   const [currentReps, setCurrentReps] = useState('')
   const [currentWeight, setCurrentWeight] = useState('')
+  const [currentRpe, setCurrentRpe] = useState('')
+  const [currentRir, setCurrentRir] = useState('')
   const [finishing, setFinishing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -107,11 +109,58 @@ export default function ActiveWorkout() {
 
   const currentPE = plan?.plan_exercises[currentExIdx]
   const setsForCurrent = currentPE ? (loggedSets[currentPE.id] || []) : []
+  const previousSet = setsForCurrent.length > 0 ? setsForCurrent[setsForCurrent.length - 1] : null
   const allSetsLogged = setsForCurrent.length >= (currentPE?.sets || 0)
+  const isResting = restSeconds !== null
+
+  function getDoneCount(pe) {
+    return (loggedSets[pe.id] || []).length
+  }
+
+  function getSupersetPairIndex(idx) {
+    if (!plan || !plan.plan_exercises || plan.plan_exercises.length < 2) return null
+    const candidate = idx % 2 === 0 ? idx + 1 : idx - 1
+    if (candidate < 0 || candidate >= plan.plan_exercises.length) return null
+    return candidate
+  }
+
+  function getNextIncompleteExerciseIndex() {
+    if (!plan) return null
+    for (let i = 0; i < plan.plan_exercises.length; i++) {
+      const pe = plan.plan_exercises[i]
+      if (getDoneCount(pe) < pe.sets) return i
+    }
+    return null
+  }
+
+  function adjustNumberValue(value, delta, { min = -Infinity, max = Infinity, step = 1, decimals = 0 } = {}) {
+    const current = value === '' ? 0 : parseFloat(value)
+    const safe = Number.isFinite(current) ? current : 0
+    const next = Math.max(min, Math.min(max, safe + delta * step))
+    return decimals > 0 ? next.toFixed(decimals) : String(Math.round(next))
+  }
+
+  function duplicatePreviousSet() {
+    if (!previousSet) return
+    setCurrentReps(String(previousSet.reps_done ?? currentReps))
+    setCurrentWeight(String(previousSet.weight_used ?? currentWeight))
+    setCurrentRpe(previousSet.rpe == null ? '' : String(previousSet.rpe))
+    setCurrentRir(previousSet.rir == null ? '' : String(previousSet.rir))
+    setIsWarmup(Boolean(previousSet.is_warmup))
+  }
+
+  function onSetFormSubmit(e) {
+    e.preventDefault()
+    if (!isResting) {
+      logSet()
+    }
+  }
 
   async function logSet() {
     const reps = parseInt(currentReps)
     const weight = parseFloat(currentWeight) || 0
+    const rpe = currentRpe === '' ? null : parseFloat(currentRpe)
+    const rir = currentRir === '' ? null : parseFloat(currentRir)
     if (!currentPE || isNaN(reps) || reps < 1) return
 
     const setNumber = setsForCurrent.length + 1
@@ -120,16 +169,46 @@ export default function ActiveWorkout() {
       set_number: setNumber,
       reps_done: reps,
       weight_used: weight,
+      rpe: rpe,
+      rir: rir,
       is_warmup: isWarmup,
     })
 
     setLoggedSets(prev => ({
       ...prev,
-      [currentPE.id]: [...(prev[currentPE.id] || []), { set_number: setNumber, reps_done: reps, weight_used: weight, is_warmup: isWarmup }],
+      [currentPE.id]: [...(prev[currentPE.id] || []), { set_number: setNumber, reps_done: reps, weight_used: weight, rpe: rpe, rir: rir, is_warmup: isWarmup }],
     }))
     soundPlayedRef.current.clear() // Reset sound tracking for new rest period
-    setRestSeconds(plan.rest_time)
+
+    const scheme = plan.scheme_type || 'straight'
+    if (scheme === 'superset') {
+      const pairIdx = getSupersetPairIndex(currentExIdx)
+      const pairPe = pairIdx !== null ? plan.plan_exercises[pairIdx] : null
+
+      if (pairPe) {
+        const pairDone = getDoneCount(pairPe)
+        const pairNeedsThisRound = pairDone < setNumber && pairDone < pairPe.sets
+
+        if (pairNeedsThisRound) {
+          goToExercise(pairIdx)
+          setRestSeconds(null)
+        } else {
+          setRestSeconds(plan.rest_time)
+          const nextIncomplete = getNextIncompleteExerciseIndex()
+          if (nextIncomplete !== null && nextIncomplete !== currentExIdx) {
+            goToExercise(nextIncomplete)
+          }
+        }
+      } else {
+        setRestSeconds(plan.rest_time)
+      }
+    } else {
+      setRestSeconds(plan.rest_time)
+    }
+
     setIsWarmup(false) // Reset warmup flag for next set
+    setCurrentRpe('')
+    setCurrentRir('')
   }
 
   function goToExercise(idx) {
@@ -228,11 +307,16 @@ export default function ActiveWorkout() {
             <p className="target-info">
               Target: <strong>{currentPE.sets} sets × {currentPE.reps} reps @ {currentPE.weight} kg</strong>
             </p>
+            {plan.scheme_type === 'superset' && (
+              <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '-0.5rem', marginBottom: '0.9rem' }}>
+                Superset mode enabled (adjacent exercise pairs: 1-2, 3-4, ...). Auto-switch active.
+              </p>
+            )}
 
             {setsForCurrent.length > 0 && (
               <table style={{ marginBottom: '1rem' }}>
                 <thead>
-                  <tr><th>Set</th><th>Reps done</th><th>Weight</th></tr>
+                  <tr><th>Set</th><th>Reps done</th><th>Weight</th><th>RPE</th><th>RIR</th></tr>
                 </thead>
                 <tbody>
                   {setsForCurrent.map(s => (
@@ -240,6 +324,8 @@ export default function ActiveWorkout() {
                       <td>{s.set_number}</td>
                       <td>{s.reps_done}</td>
                       <td>{s.weight_used} kg</td>
+                      <td>{s.rpe ?? '—'}</td>
+                      <td>{s.rir ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -249,51 +335,109 @@ export default function ActiveWorkout() {
             {!allSetsLogged && (
               <div className="log-set">
                 <h3>Log set {setsForCurrent.length + 1} of {currentPE.sets}</h3>
-                {restSeconds !== null ? (
-                  <div className="rest-timer">
-                    Rest: <strong>{formatTime(restSeconds)}</strong>
-                    {restSeconds <= 5 && (
-                      <span style={{ color: 'var(--danger)', marginLeft: '0.5rem', fontWeight: 700 }}>
-                        {restSeconds}
-                      </span>
-                    )}
-                    <button className="btn-secondary" onClick={() => {
-                      soundPlayedRef.current.clear()
-                      setRestSeconds(null)
-                    }}>Skip</button>
-                  </div>
-                ) : (
-                  <div className="set-form">
-                    <label>
+                <div className={`log-set-body ${isResting ? 'is-resting' : ''}`}>
+                  <form className="set-form" onSubmit={onSetFormSubmit}>
+                    <label className="number-field">
                       Reps
-                      <input
-                        type="number"
-                        min="1"
-                        value={currentReps}
-                        onChange={e => setCurrentReps(e.target.value)}
-                      />
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentReps(v => adjustNumberValue(v, -1, { min: 1, step: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={currentReps}
+                          onChange={e => setCurrentReps(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentReps(v => adjustNumberValue(v, 1, { min: 1, step: 1 }))} disabled={isResting}>+</button>
+                      </div>
                     </label>
-                    <label>
+                    <label className="number-field">
                       Weight (kg)
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={currentWeight}
-                        onChange={e => setCurrentWeight(e.target.value)}
-                      />
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentWeight(v => adjustNumberValue(v, -1, { min: 0, step: 0.5, decimals: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={currentWeight}
+                          onChange={e => setCurrentWeight(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentWeight(v => adjustNumberValue(v, 1, { min: 0, step: 0.5, decimals: 1 }))} disabled={isResting}>+</button>
+                      </div>
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label className="number-field">
+                      RPE (optional)
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentRpe(v => adjustNumberValue(v, -1, { min: 1, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          step="0.5"
+                          value={currentRpe}
+                          onChange={e => setCurrentRpe(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentRpe(v => adjustNumberValue(v, 1, { min: 1, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>+</button>
+                      </div>
+                    </label>
+                    <label className="number-field">
+                      RIR (optional)
+                      <div className="stepper">
+                        <button type="button" className="btn-step" onClick={() => setCurrentRir(v => adjustNumberValue(v, -1, { min: 0, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>-</button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          step="0.5"
+                          value={currentRir}
+                          onChange={e => setCurrentRir(e.target.value)}
+                          disabled={isResting}
+                        />
+                        <button type="button" className="btn-step" onClick={() => setCurrentRir(v => adjustNumberValue(v, 1, { min: 0, max: 10, step: 0.5, decimals: 1 }))} disabled={isResting}>+</button>
+                      </div>
+                    </label>
+                    <label className="warmup-toggle">
                       <input
                         type="checkbox"
                         checked={isWarmup}
                         onChange={e => setIsWarmup(e.target.checked)}
+                        disabled={isResting}
                       />
                       <span>Warmup set (exclude from progression)</span>
                     </label>
-                    <button className="btn-primary" onClick={logSet}>✔ Log Set</button>
-                  </div>
-                )}
+                    <div className="set-actions">
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={duplicatePreviousSet}
+                        disabled={isResting || !previousSet}
+                        title={previousSet ? 'Copy reps/weight/RPE/RIR from previous set' : 'No previous set to copy'}
+                      >
+                        Duplicate Prev
+                      </button>
+                      <button type="submit" className="btn-primary" disabled={isResting}>✔ Log Set</button>
+                    </div>
+                  </form>
+
+                  {isResting && (
+                    <div className="rest-overlay">
+                      <div className="rest-timer">
+                        Rest: <strong>{formatTime(restSeconds)}</strong>
+                        {restSeconds <= 5 && (
+                          <span style={{ color: 'var(--danger)', marginLeft: '0.5rem', fontWeight: 700 }}>
+                            {restSeconds}
+                          </span>
+                        )}
+                        <button className="btn-secondary" onClick={() => {
+                          soundPlayedRef.current.clear()
+                          setRestSeconds(null)
+                        }}>Skip</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

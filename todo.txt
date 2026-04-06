@@ -3,16 +3,16 @@ High priority
 - [x] Basic test coverage
   - API smoke tests for core flows: create session, log sets, finish session, summary/progress.
 
-- [ ] Data quality improvements
+- [x] Data quality improvements
   - Add optional RPE/RIR fields per set.
 
-- [ ] Better progression analytics
+- [x] Better progression analytics
   - Rolling bests (30/90 day), plateau detection, and new-PR highlights.
 
-- [ ] Program templates
+- [x] Program templates
   - Save reusable session/program templates (for ABA/BAB blocks) and clone quickly.
 
-- [ ] Calendar and consistency view
+- [x] Calendar and consistency view
   - Weekly/monthly workout heatmap.
 
 Medium priority
@@ -23,7 +23,7 @@ Medium priority
 - [x] Import capability (CSV/JSON)
   - Add import with validation and dry-run preview.
 
-- [ ] Active workout UX refinement
+- [x] Active workout UX refinement
   - Keyboard-first logging, duplicate previous set, and quick increment/decrement controls.
 
 - [ ] Lightweight observability

@@ -14,6 +14,9 @@ export default function Header() {
         <NavLink to="/1rm" className={({ isActive }) => isActive ? 'active' : ''}>
           1RM
         </NavLink>
+        <NavLink to="/consistency" className={({ isActive }) => isActive ? 'active' : ''}>
+          Consistency
+        </NavLink>
         <NavLink to="/export" className={({ isActive }) => isActive ? 'active' : ''}>
           Export
         </NavLink>
