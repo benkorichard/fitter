@@ -9,6 +9,7 @@ A web application for tracking workout progress through training programs, with 
 - **Progress Tracking**: View detailed progression data across all sessions in a program, including reps/weight progression charts
 - **Progress Insights**: Rolling best trend, plateau detection, and PR highlights
 - **Cycle Comparison**: Compare two program cycles side-by-side with per-set performance deltas
+- **Consistency View**: Weekly trend and monthly workout heatmap
 - **Warmup Set Handling**: Mark sets as warmup so they are excluded from progression/PR metrics
 - **Set Quality Metrics**: Optional RPE/RIR logging per set
 - **Active Workout**: Log sets during workouts with configurable rest timers and audio cues

@@ -49,6 +49,7 @@ export const updateSessionNotes = (id, notes) => request('PUT', `/sessions/${id}
 
 // Stats
 export const getBestSets = () => request('GET', '/stats/best-sets')
+export const getWorkoutHeatmap = (year, month) => request('GET', `/stats/workout-heatmap?year=${year}&month=${month}`)
 
 // Import / export
 export const importJsonData = (rows, options = {}) => request('POST', '/import/json', {

@@ -12,7 +12,7 @@ High priority
 - [ ] Program templates
   - Save reusable session/program templates (for ABA/BAB blocks) and clone quickly.
 
-- [ ] Calendar and consistency view
+- [x] Calendar and consistency view
   - Weekly/monthly workout heatmap.
 
 Medium priority
