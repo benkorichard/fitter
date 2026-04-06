@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 import models
@@ -15,6 +16,50 @@ import schemas
 from database import Base, engine, get_db
 
 Base.metadata.create_all(bind=engine)
+
+
+def _sqlite_add_missing_columns():
+    """Best-effort schema patching for SQLite deployments without Alembic migrations."""
+    if engine.url.get_backend_name() != "sqlite":
+        return
+
+    table_column_sql = {
+        "workout_plans": {
+            "scheme_type": "ALTER TABLE workout_plans ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
+        },
+        "plan_exercises": {
+            "scheme_type": "ALTER TABLE plan_exercises ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
+            "superset_group": "ALTER TABLE plan_exercises ADD COLUMN superset_group VARCHAR(50) DEFAULT ''",
+            "superset_order": "ALTER TABLE plan_exercises ADD COLUMN superset_order INTEGER DEFAULT 0",
+        },
+        "workout_sessions": {
+            "notes": "ALTER TABLE workout_sessions ADD COLUMN notes VARCHAR(1000) DEFAULT ''",
+        },
+        "session_sets": {
+            "rpe": "ALTER TABLE session_sets ADD COLUMN rpe FLOAT",
+            "rir": "ALTER TABLE session_sets ADD COLUMN rir FLOAT",
+            "is_warmup": "ALTER TABLE session_sets ADD COLUMN is_warmup INTEGER DEFAULT 0",
+        },
+    }
+
+    with engine.begin() as conn:
+        for table_name, columns in table_column_sql.items():
+            table_exists = conn.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :name"),
+                {"name": table_name},
+            ).first()
+            if not table_exists:
+                continue
+
+            existing_cols = {
+                row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+            }
+            for col_name, alter_sql in columns.items():
+                if col_name not in existing_cols:
+                    conn.exec_driver_sql(alter_sql)
+
+
+_sqlite_add_missing_columns()
 
 app = FastAPI(title="Fitter API")
 
@@ -211,9 +256,12 @@ def get_program_progress(program_id: int, db: Session = Depends(get_db)):
                 schemas.SetProgressEntry(
                     session_id=session.id,
                     session_date=session.started_at,
+                    exercise_name=s.plan_exercise.exercise.name if s.plan_exercise and s.plan_exercise.exercise else "",
                     set_number=s.set_number,
                     reps_done=s.reps_done,
                     weight_used=s.weight_used,
+                    rpe=s.rpe,
+                    rir=s.rir,
                 )
             )
 
@@ -325,6 +373,128 @@ def get_summary(session_id: int, db: Session = Depends(get_db)):
 
 # ─────────────────────────── Stats ───────────────────────────────
 
+@app.get("/api/stats/workout-heatmap")
+def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depends(get_db)):
+    now = datetime.datetime.utcnow()
+    target_year = year or now.year
+    target_month = month or now.month
+
+    if target_month < 1 or target_month > 12:
+        raise HTTPException(400, "month must be between 1 and 12")
+    if target_year < 2000 or target_year > 3000:
+        raise HTTPException(400, "year out of supported range")
+
+    month_start = datetime.datetime(target_year, target_month, 1)
+    if target_month == 12:
+        month_end = datetime.datetime(target_year + 1, 1, 1)
+    else:
+        month_end = datetime.datetime(target_year, target_month + 1, 1)
+
+    monthly_sessions = (
+        db.query(models.WorkoutSession)
+        .filter(models.WorkoutSession.started_at >= month_start)
+        .filter(models.WorkoutSession.started_at < month_end)
+        .all()
+    )
+
+    day_counts: Dict[str, int] = {}
+    for s in monthly_sessions:
+        key = s.started_at.date().isoformat()
+        day_counts[key] = day_counts.get(key, 0) + 1
+
+    days_in_month = (month_end - month_start).days
+    max_count = max(day_counts.values()) if day_counts else 0
+
+    def level_from_count(count: int) -> int:
+        if count <= 0:
+            return 0
+        if max_count <= 1:
+            return 4
+        return min(4, 1 + int(((count - 1) * 4) / max(1, max_count - 1)))
+
+    month_days = []
+    for day in range(1, days_in_month + 1):
+        d = datetime.date(target_year, target_month, day)
+        iso = d.isoformat()
+        count = day_counts.get(iso, 0)
+        month_days.append({
+            "date": iso,
+            "day": day,
+            "count": count,
+            "level": level_from_count(count),
+        })
+
+    # Weekly consistency for last 12 weeks.
+    today = now.date()
+    current_week_start = today - datetime.timedelta(days=today.weekday())
+    history_start = current_week_start - datetime.timedelta(weeks=11)
+    history_start_dt = datetime.datetime.combine(history_start, datetime.time.min)
+
+    weekly_sessions = (
+        db.query(models.WorkoutSession)
+        .filter(models.WorkoutSession.started_at >= history_start_dt)
+        .all()
+    )
+
+    weekly_counts_map: Dict[str, int] = {}
+    for i in range(12):
+        ws = current_week_start - datetime.timedelta(weeks=(11 - i))
+        weekly_counts_map[ws.isoformat()] = 0
+
+    for s in weekly_sessions:
+        d = s.started_at.date()
+        week_start = d - datetime.timedelta(days=d.weekday())
+        key = week_start.isoformat()
+        if key in weekly_counts_map:
+            weekly_counts_map[key] += 1
+
+    weekly_counts = []
+    for i in range(12):
+        ws = current_week_start - datetime.timedelta(weeks=(11 - i))
+        key = ws.isoformat()
+        weekly_counts.append({
+            "week_start": key,
+            "label": ws.strftime("%b %d"),
+            "count": weekly_counts_map.get(key, 0),
+        })
+
+    # Streaks (across all historical session dates).
+    all_session_dates = sorted({s.started_at.date() for s in db.query(models.WorkoutSession).all()})
+    best_streak = 0
+    current_streak = 0
+    prev_date = None
+
+    for d in all_session_dates:
+        if prev_date is None or (d - prev_date).days == 1:
+            current_streak += 1
+        elif d == prev_date:
+            pass
+        else:
+            current_streak = 1
+        best_streak = max(best_streak, current_streak)
+        prev_date = d
+
+    active_streak = 0
+    if all_session_dates:
+        streak_date = all_session_dates[-1]
+        active_streak = 1
+        for i in range(len(all_session_dates) - 2, -1, -1):
+            if (streak_date - all_session_dates[i]).days == 1:
+                active_streak += 1
+                streak_date = all_session_dates[i]
+            else:
+                break
+
+    return {
+        "year": target_year,
+        "month": target_month,
+        "month_days": month_days,
+        "month_total_sessions": len(monthly_sessions),
+        "weekly_counts": weekly_counts,
+        "best_streak": best_streak,
+        "active_streak": active_streak,
+    }
+
 @app.get("/api/stats/best-sets")
 def get_best_sets(db: Session = Depends(get_db)):
     """Return the best (heaviest non-warmup) set per exercise across all sessions."""
@@ -376,6 +546,8 @@ def _build_export_rows(db: Session):
             "set_number": s.set_number,
             "reps_done": s.reps_done,
             "weight_used": s.weight_used,
+            "rpe": s.rpe,
+            "rir": s.rir,
             "is_warmup": s.is_warmup,
         })
     return rows
@@ -385,7 +557,7 @@ def _build_export_rows(db: Session):
 def export_csv(db: Session = Depends(get_db)):
     rows = _build_export_rows(db)
     fieldnames = ["session_id", "session_date", "session_notes", "plan_name", "program_name",
-                  "exercise_name", "muscle_group", "set_number", "reps_done", "weight_used", "is_warmup"]
+                  "exercise_name", "muscle_group", "set_number", "reps_done", "weight_used", "rpe", "rir", "is_warmup"]
 
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fieldnames)
@@ -612,6 +784,8 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
                 set_number=max(1, _to_int(row.get("set_number"), 1)),
                 reps_done=max(0, _to_int(row.get("reps_done"), 0)),
                 weight_used=max(0.0, _to_float(row.get("weight_used"), 0.0)),
+                rpe=_to_float(row.get("rpe"), None) if row.get("rpe") is not None else None,
+                rir=_to_float(row.get("rir"), None) if row.get("rir") is not None else None,
                 is_warmup=_to_bool(row.get("is_warmup", False)),
             )
             db.add(logged_set)
