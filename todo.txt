@@ -17,7 +17,7 @@ High priority
 
 Medium priority
 
-- [ ] API documentation polish
+- [x] API documentation polish
   - Improve schema examples and endpoint descriptions.
 
 - [x] Import capability (CSV/JSON)

@@ -26,6 +26,7 @@ export default function Header() {
         <NavLink to="/exercises" className={({ isActive }) => isActive ? 'active' : ''}>
           Exercises
         </NavLink>
+        <a href="/docs" target="_blank" rel="noreferrer">API Docs</a>
       </nav>
     </header>
   )

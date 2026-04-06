@@ -1,14 +1,14 @@
 import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ---------- Exercise ----------
 
 class ExerciseCreate(BaseModel):
-    name: str
-    muscle_group: str = ""
-    description: str = ""
+    name: str = Field(examples=["Barbell Back Squat"])
+    muscle_group: str = Field(default="", examples=["Legs"])
+    description: str = Field(default="", examples=["High-bar squat with full depth"])
 
 
 class Exercise(ExerciseCreate):
@@ -19,14 +19,14 @@ class Exercise(ExerciseCreate):
 # ---------- Plan Exercise ----------
 
 class PlanExerciseCreate(BaseModel):
-    exercise_id: int
-    sets: int = 3
-    reps: int = 10
-    weight: float = 0.0
-    scheme_type: str = "straight"
-    superset_group: str = ""
-    superset_order: int = 0
-    order: int = 0
+    exercise_id: int = Field(examples=[3])
+    sets: int = Field(default=3, examples=[4])
+    reps: int = Field(default=10, examples=[8])
+    weight: float = Field(default=0.0, examples=[80.0])
+    scheme_type: str = Field(default="straight", examples=["straight"])
+    superset_group: str = Field(default="", examples=["A"])
+    superset_order: int = Field(default=0, examples=[1])
+    order: int = Field(default=0, examples=[0])
 
 
 class PlanExercise(PlanExerciseCreate):
@@ -38,10 +38,10 @@ class PlanExercise(PlanExerciseCreate):
 # ---------- Workout Plan ----------
 
 class WorkoutPlanCreate(BaseModel):
-    name: str
-    description: str = ""
-    rest_time: int = 60
-    scheme_type: str = "straight"
+    name: str = Field(examples=["Push Day"])
+    description: str = Field(default="", examples=["Chest, shoulders, triceps focus"])
+    rest_time: int = Field(default=60, examples=[90])
+    scheme_type: str = Field(default="straight", examples=["straight"])
 
 
 class WorkoutPlan(WorkoutPlanCreate):
@@ -54,11 +54,11 @@ class WorkoutPlan(WorkoutPlanCreate):
 # ---------- Session ----------
 
 class TrainingProgramCreate(BaseModel):
-    name: str
-    description: str = ""
-    goal: str = ""
-    exercise: str = ""
-    status: str = "active"
+    name: str = Field(examples=["8 Week Squat Cycle"])
+    description: str = Field(default="", examples=["Linear progression block"])
+    goal: str = Field(default="", examples=["5x5 @ 120kg"])
+    exercise: str = Field(default="", examples=["Back Squat"])
+    status: str = Field(default="active", examples=["active"])
 
 
 class TrainingProgram(TrainingProgramCreate):
@@ -68,9 +68,9 @@ class TrainingProgram(TrainingProgramCreate):
 
 
 class WorkoutSessionCreate(BaseModel):
-    plan_id: int
-    program_id: Optional[int] = None
-    notes: str = ""
+    plan_id: int = Field(examples=[1])
+    program_id: Optional[int] = Field(default=None, examples=[2])
+    notes: str = Field(default="", examples=["Felt strong today"])
 
 
 class WorkoutSession(WorkoutSessionCreate):
@@ -84,13 +84,13 @@ class WorkoutSession(WorkoutSessionCreate):
 # ---------- Session Set ----------
 
 class SessionSetCreate(BaseModel):
-    plan_exercise_id: int
-    set_number: int
-    reps_done: int
-    weight_used: float
-    rpe: Optional[float] = None
-    rir: Optional[float] = None
-    is_warmup: bool = False
+    plan_exercise_id: int = Field(examples=[5])
+    set_number: int = Field(examples=[1])
+    reps_done: int = Field(examples=[5])
+    weight_used: float = Field(examples=[100.0])
+    rpe: Optional[float] = Field(default=None, examples=[8.5])
+    rir: Optional[float] = Field(default=None, examples=[1.0])
+    is_warmup: bool = Field(default=False, examples=[False])
 
 
 class SessionSet(SessionSetCreate):
