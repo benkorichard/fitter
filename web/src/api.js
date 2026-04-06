@@ -52,8 +52,14 @@ export const getBestSets = () => request('GET', '/stats/best-sets')
 export const getWorkoutHeatmap = (year, month) => request('GET', `/stats/workout-heatmap?year=${year}&month=${month}`)
 
 // Import / export
-export const importJsonData = (rows, options = {}) => request('POST', '/import/json', {
-  rows,
-  dry_run: Boolean(options.dryRun),
-  clear_existing: Boolean(options.clearExisting),
-})
+export const importJsonData = (payload, options = {}) => {
+  const normalizedPayload = Array.isArray(payload)
+    ? { rows: payload }
+    : (payload && typeof payload === 'object' ? { ...payload } : {})
+
+  return request('POST', '/import/json', {
+    ...normalizedPayload,
+    dry_run: Boolean(options.dryRun),
+    clear_existing: Boolean(options.clearExisting),
+  })
+}

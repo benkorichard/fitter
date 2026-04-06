@@ -23,11 +23,11 @@ Medium priority
 - [x] Import capability (CSV/JSON)
   - Add import with validation and dry-run preview.
 
-- [ ] Import flexibility improvements
+- [x] Import flexibility improvements
   - Accept exercises-only JSON payloads (without requiring program/session rows).
   - Support importing from exercise export format directly.
 
-- [ ] Clarify Export/Import UX
+- [x] Clarify Export/Import UX
   - Rename/restructure Export page and nav so import actions are not hidden under Export.
   - Consider split pages or a unified Data Management section.
 

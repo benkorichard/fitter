@@ -110,9 +110,16 @@ def delete_exercise(exercise_id: int, db: Session = Depends(get_db)):
 
 # ─────────────────────────── Workout Plans ────────────────────────
 
+def _sanitize_plan_for_response(plan: models.WorkoutPlan) -> models.WorkoutPlan:
+    """Drop orphan plan_exercise rows (missing exercise) to keep API responses valid."""
+    if plan and getattr(plan, "plan_exercises", None):
+        plan.plan_exercises = [pe for pe in plan.plan_exercises if pe.exercise is not None]
+    return plan
+
 @app.get("/api/plans", response_model=List[schemas.WorkoutPlan])
 def list_plans(db: Session = Depends(get_db)):
-    return db.query(models.WorkoutPlan).all()
+    plans = db.query(models.WorkoutPlan).all()
+    return [_sanitize_plan_for_response(p) for p in plans]
 
 
 @app.get("/api/plans/{plan_id}", response_model=schemas.WorkoutPlan)
@@ -120,7 +127,7 @@ def get_plan(plan_id: int, db: Session = Depends(get_db)):
     plan = db.get(models.WorkoutPlan, plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
-    return plan
+    return _sanitize_plan_for_response(plan)
 
 
 @app.post("/api/plans", response_model=schemas.WorkoutPlan, status_code=201)
@@ -129,7 +136,7 @@ def create_plan(body: schemas.WorkoutPlanCreate, db: Session = Depends(get_db)):
     db.add(plan)
     db.commit()
     db.refresh(plan)
-    return plan
+    return _sanitize_plan_for_response(plan)
 
 
 @app.put("/api/plans/{plan_id}", response_model=schemas.WorkoutPlan)
@@ -141,7 +148,7 @@ def update_plan(plan_id: int, body: schemas.WorkoutPlanCreate, db: Session = Dep
         setattr(plan, k, v)
     db.commit()
     db.refresh(plan)
-    return plan
+    return _sanitize_plan_for_response(plan)
 
 
 @app.delete("/api/plans/{plan_id}", status_code=204)
@@ -625,9 +632,26 @@ def _parse_session_date(value: Any) -> datetime.datetime:
     return datetime.datetime.utcnow()
 
 
+def _looks_like_set_row(item: Dict[str, Any]) -> bool:
+    row_keys = {
+        "session_id",
+        "session_date",
+        "plan_name",
+        "program_name",
+        "exercise_name",
+        "set_number",
+        "reps_done",
+        "weight_used",
+        "rpe",
+        "rir",
+        "is_warmup",
+    }
+    return any(k in item for k in row_keys)
+
+
 def _extract_import_rows(payload: Any) -> List[Dict[str, Any]]:
     if isinstance(payload, list):
-        rows = payload
+        rows = [r for r in payload if isinstance(r, dict) and _looks_like_set_row(r)]
     elif isinstance(payload, dict):
         rows = payload.get("rows", [])
     else:
@@ -638,16 +662,50 @@ def _extract_import_rows(payload: Any) -> List[Dict[str, Any]]:
 
     normalized: List[Dict[str, Any]] = []
     for r in rows:
-        if isinstance(r, dict):
+        if isinstance(r, dict) and _looks_like_set_row(r):
             normalized.append(r)
+    return normalized
+
+
+def _extract_import_exercises(payload: Any) -> List[Dict[str, str]]:
+    if isinstance(payload, list):
+        exercises = payload
+    elif isinstance(payload, dict):
+        exercises = payload.get("exercises", [])
+    else:
+        exercises = []
+
+    if not isinstance(exercises, list):
+        raise HTTPException(400, "Invalid payload. Expected exercises to be a list.")
+
+    normalized: List[Dict[str, str]] = []
+    for ex in exercises:
+        if not isinstance(ex, dict):
+            continue
+        if _looks_like_set_row(ex):
+            continue
+
+        name = (ex.get("name") or ex.get("exercise_name") or "").strip()
+        if not name:
+            continue
+
+        normalized.append(
+            {
+                "name": name,
+                "muscle_group": (ex.get("muscle_group") or "").strip(),
+                "description": (ex.get("description") or "").strip(),
+            }
+        )
+
     return normalized
 
 
 @app.post("/api/import/json")
 def import_json(payload: dict, db: Session = Depends(get_db)):
     rows = _extract_import_rows(payload)
-    if not rows:
-        raise HTTPException(400, "No rows found in import payload")
+    exercises = _extract_import_exercises(payload)
+    if not rows and not exercises:
+        raise HTTPException(400, "No rows or exercises found in import payload")
 
     dry_run = _to_bool(payload.get("dry_run", False))
     clear_existing = _to_bool(payload.get("clear_existing", False))
@@ -686,6 +744,21 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
             exercise_cache.clear()
             plan_cache.clear()
             program_cache.clear()
+
+        for ex in exercises:
+            ex_key = ex["name"].lower()
+            if ex_key in exercise_cache:
+                continue
+
+            exercise = models.Exercise(
+                name=ex["name"],
+                muscle_group=ex["muscle_group"],
+                description=ex["description"],
+            )
+            db.add(exercise)
+            db.flush()
+            exercise_cache[ex_key] = exercise
+            created["exercises"] += 1
 
         for idx, row in enumerate(rows):
             exercise_name = (row.get("exercise_name") or "Unknown Exercise").strip()
@@ -798,6 +871,7 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
                 "dry_run": True,
                 "clear_existing": clear_existing,
                 "rows_received": len(rows),
+                "exercises_received": len(exercises),
                 "would_create": created,
             }
 
@@ -807,6 +881,7 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
             "dry_run": False,
             "clear_existing": clear_existing,
             "rows_received": len(rows),
+            "exercises_received": len(exercises),
             "created": created,
         }
     except HTTPException:
