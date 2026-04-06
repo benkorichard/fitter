@@ -35,6 +35,7 @@ def _sqlite_add_missing_columns():
         },
         "workout_sessions": {
             "notes": "ALTER TABLE workout_sessions ADD COLUMN notes VARCHAR(1000) DEFAULT ''",
+            "exclude_from_analytics": "ALTER TABLE workout_sessions ADD COLUMN exclude_from_analytics INTEGER DEFAULT 0",
         },
         "session_sets": {
             "rpe": "ALTER TABLE session_sets ADD COLUMN rpe FLOAT",
@@ -70,6 +71,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _is_analytics_session(session: models.WorkoutSession) -> bool:
+    return not bool(getattr(session, "exclude_from_analytics", False))
 
 
 # ─────────────────────────── Exercises ────────────────────────────
@@ -295,6 +300,7 @@ def get_program_progress(program_id: int, db: Session = Depends(get_db)):
                     weight_used=s.weight_used,
                     rpe=s.rpe,
                     rir=s.rir,
+                    exclude_from_analytics=bool(session.exclude_from_analytics),
                 )
             )
 
@@ -342,6 +348,8 @@ def update_session(session_id: int, body: dict, db: Session = Depends(get_db)):
         raise HTTPException(404, "Session not found")
     if "notes" in body:
         session.notes = body["notes"]
+    if "exclude_from_analytics" in body:
+        session.exclude_from_analytics = bool(body["exclude_from_analytics"])
     db.commit()
     db.refresh(session)
     return session
@@ -410,6 +418,7 @@ def get_summary(session_id: int, db: Session = Depends(get_db)):
         finished_at=session.finished_at,
         duration_seconds=duration,
         notes=session.notes,
+        exclude_from_analytics=bool(session.exclude_from_analytics),
         exercises=exercise_summaries,
         grand_total_weight=grand_total,
     )
@@ -440,6 +449,7 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
         .filter(models.WorkoutSession.started_at < month_end)
         .all()
     )
+    monthly_sessions = [s for s in monthly_sessions if _is_analytics_session(s)]
 
     day_counts: Dict[str, int] = {}
     for s in monthly_sessions:
@@ -479,6 +489,7 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
         .filter(models.WorkoutSession.started_at >= history_start_dt)
         .all()
     )
+    weekly_sessions = [s for s in weekly_sessions if _is_analytics_session(s)]
 
     weekly_counts_map: Dict[str, int] = {}
     for i in range(12):
@@ -503,7 +514,9 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
         })
 
     # Streaks (across all historical session dates).
-    all_session_dates = sorted({s.started_at.date() for s in db.query(models.WorkoutSession).all()})
+    all_sessions = db.query(models.WorkoutSession).all()
+    analytics_sessions = [s for s in all_sessions if _is_analytics_session(s)]
+    all_session_dates = sorted({s.started_at.date() for s in analytics_sessions})
     best_streak = 0
     current_streak = 0
     prev_date = None
@@ -542,8 +555,17 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
 @app.get("/api/stats/best-sets")
 def get_best_sets(db: Session = Depends(get_db)):
     """Return the best (heaviest non-warmup) set per exercise across all sessions."""
+    analytics_session_ids = {
+        s.id
+        for s in db.query(models.WorkoutSession).all()
+        if _is_analytics_session(s)
+    }
+    if not analytics_session_ids:
+        return []
+
     sets = (
         db.query(models.SessionSet)
+        .filter(models.SessionSet.session_id.in_(analytics_session_ids))
         .filter(models.SessionSet.is_warmup == False)
         .all()
     )

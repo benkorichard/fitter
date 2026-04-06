@@ -51,6 +51,7 @@ export const finishSession = (id) => request('POST', `/sessions/${id}/finish`)
 export const logSet = (sessionId, data) => request('POST', `/sessions/${sessionId}/sets`, data)
 export const getSessionSummary = (id) => request('GET', `/sessions/${id}/summary`)
 export const updateSessionNotes = (id, notes) => request('PUT', `/sessions/${id}`, { notes })
+export const setSessionAnalyticsExclusion = (id, exclude) => request('PUT', `/sessions/${id}`, { exclude_from_analytics: Boolean(exclude) })
 export const deleteSession = (id) => request('DELETE', `/sessions/${id}`)
 
 // Stats

@@ -21,6 +21,7 @@ export default function Summary() {
   const [editing, setEditing] = useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [analyticsBusy, setAnalyticsBusy] = useState(false)
 
   useEffect(() => {
     api.getSessionSummary(sessionId)
@@ -57,6 +58,19 @@ export default function Summary() {
     }
   }
 
+  async function toggleAnalyticsExclusion() {
+    setAnalyticsBusy(true)
+    try {
+      const nextValue = !summary.exclude_from_analytics
+      await api.setSessionAnalyticsExclusion(sessionId, nextValue)
+      setSummary(prev => ({ ...prev, exclude_from_analytics: nextValue }))
+    } catch (e) {
+      alert('Error updating analytics flag: ' + e.message)
+    } finally {
+      setAnalyticsBusy(false)
+    }
+  }
+
   if (loading) return <div className="loading">Loading summary…</div>
   if (error) return <div className="error">{error}</div>
 
@@ -67,6 +81,20 @@ export default function Summary() {
     <div>
       <h1>Workout Complete 🎉</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{summary.plan_name}</p>
+
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <h2>Analytics inclusion</h2>
+        <p style={{ color: 'var(--muted)', marginBottom: '0.75rem' }}>
+          {summary.exclude_from_analytics
+            ? 'This session is excluded from analytics (progress, 1RM, consistency).'
+            : 'This session is included in analytics.'}
+        </p>
+        <button className="btn-secondary" onClick={toggleAnalyticsExclusion} disabled={analyticsBusy}>
+          {analyticsBusy
+            ? 'Updating…'
+            : (summary.exclude_from_analytics ? 'Include in analytics' : 'Mark as aborted (exclude)')}
+        </button>
+      </div>
 
       <div className="summary-stats">
         <div className="stat-card">

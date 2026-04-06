@@ -44,12 +44,12 @@ Medium priority
   - Allow removing a workout session from a program (e.g., aborted due to injury/early stop).
   - Add confirmation UX to avoid accidental deletion.
 
-- [ ] Session archive lifecycle (preferred over hard delete)
+- [x] Session archive lifecycle (preferred over hard delete)
   - Archive sessions to hide them from day-to-day dashboard while preserving analytics/history.
   - Support unarchive and duplicate archived session into a new active session/template.
   - Keep hard-delete as optional destructive action with strong confirmation.
 
-- [ ] Analytics protection for aborted sessions
+- [x] Analytics protection for aborted sessions
   - Prevent very short/aborted workouts (e.g., 1 set then finish) from skewing progression analytics.
   - Options: mark session as aborted/invalid, minimum completed-set threshold, or exclude from trend calculations.
 

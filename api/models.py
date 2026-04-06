@@ -74,6 +74,7 @@ class WorkoutSession(Base):
     started_at = Column(DateTime, default=datetime.datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
     notes = Column(String(1000), default="")  # Session notes
+    exclude_from_analytics = Column(Boolean, default=False)
     logged_sets = relationship(
         "SessionSet",
         back_populates="session",

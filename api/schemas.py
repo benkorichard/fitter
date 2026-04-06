@@ -77,6 +77,7 @@ class WorkoutSession(WorkoutSessionCreate):
     id: int
     started_at: datetime.datetime
     finished_at: Optional[datetime.datetime] = None
+    exclude_from_analytics: bool = False
     model_config = {"from_attributes": True}
 
 
@@ -115,6 +116,7 @@ class SessionSummary(BaseModel):
     finished_at: Optional[datetime.datetime] = None
     duration_seconds: Optional[int] = None
     notes: str = ""
+    exclude_from_analytics: bool = False
     exercises: List[ExerciseSummary]
     grand_total_weight: float
 
@@ -128,6 +130,7 @@ class SetProgressEntry(BaseModel):
     weight_used: float
     rpe: Optional[float] = None
     rir: Optional[float] = None
+    exclude_from_analytics: bool = False
 
 
 class ProgramProgress(BaseModel):
