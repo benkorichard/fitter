@@ -1,10 +1,11 @@
-# Fitter - Workout Tracker
+# Fitter - Self-Hosted Strength Tracker
 
-A web application for tracking workout progress through training programs, with set-level logging, progression analytics, and export tools.
+A self-hosted workout tracker focused on reusable session templates, program-linked progression, set-level logging, and local data ownership.
 
 ## Features
 
 - **Sessions**: Create reusable workout session templates with custom exercises, sets, reps, and weights
+- **Session Template Lifecycle**: Archive/unarchive templates and filter Sessions by Active, Archived, or All
 - **Programs**: Organize sessions into training programs to track long-term progression
 - **Progress Tracking**: View detailed progression data across all sessions in a program, including reps/weight progression charts
 - **Progress Insights**: Rolling best trend, plateau detection, and PR highlights
@@ -14,12 +15,15 @@ A web application for tracking workout progress through training programs, with 
 - **Set Quality Metrics**: Optional RPE/RIR logging per set
 - **Active Workout**: Log sets during workouts with configurable rest timers and audio cues
 - **Session Notes**: Save notes per workout session and edit them from the summary view
+- **Analytics Control**: Manually mark a session as excluded from analytics while keeping it visible in history
 - **Set Programming (MVP)**: Straight sets and supersets with automatic exercise switching in active workout
 - **1RM Calculator**: Estimate one-rep max from manual input and from logged workout data
 - **Data Export**: Export all logged sets as CSV or JSON for backup and analysis
-- **Data Import (JSON)**: Dry-run and import previously exported JSON to recover history after resets or migrations
+- **Data Import (JSON)**: Dry-run import with support for exported workout rows and exercises-only payloads
 - **Session History**: Access past workout summaries with total reps, weight moved, and duration
 - **Exercise Library**: Manage your exercise database with muscle groups and descriptions
+- **API Docs**: Swagger and ReDoc available through the same web origin
+- **Lightweight Observability**: Request logging plus liveness/readiness health checks
 
 ## Tech Stack
 
@@ -43,8 +47,11 @@ docker compose up --build
 
 The app will be available at:
 - Frontend: http://localhost
-- API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+- Swagger API Docs: http://localhost/docs
+- ReDoc: http://localhost/redoc
+
+The API is designed to stay internal to Docker and is exposed through the web container via Nginx proxy:
+- API base path: http://localhost/api
 
 ### First Time Setup
 
@@ -60,6 +67,7 @@ The app will be available at:
 3. **Create Program**: Set up a training program (e.g., "Chinup Strength - Goal: 5x8 at 50kg")
 4. **Start Workout**: Select a session, link to program, log sets with reps and weight
 5. **Track Progress**: View program progress to see your complete progression over time
+6. **Curate Data Quality**: Mark aborted sessions as excluded from analytics without deleting them from history
 
 ## Database
 
@@ -73,8 +81,9 @@ docker compose cp api:/data/fitter.db ./fitter.db
 ## Deployment Notes
 
 - The web container uses a production build (Vite build output) served by Nginx.
-- Nginx proxies `/api/*` traffic to the API container.
+- Nginx proxies `/api/*`, `/docs`, `/redoc`, and `/openapi.json` to the API container.
 - API hostname is configurable through `API_HOST` (defaults to `api`).
+- Only the web container is publicly exposed by default; the API container stays internal on the Docker network.
 
 Example `.env` override for custom API container hostname:
 
@@ -89,6 +98,12 @@ API_HOST=my-fitter-api
 - Database volume persists between container restarts
 - Reset database: `docker compose down -v && docker compose up --build`
 
+## Health and Observability
+
+- Liveness: `GET /api/health`
+- Readiness: `GET /api/health/ready`
+- Request logs are emitted by the API with request ID, method, path, status, and duration.
+
 ## Manual Backup and Restore
 
 ### Export via API
@@ -99,8 +114,8 @@ API_HOST=my-fitter-api
 Examples:
 
 ```bash
-curl -L http://localhost:8000/api/export/json -o fitter-export.json
-curl -L http://localhost:8000/api/export/csv -o fitter-export.csv
+curl -L http://localhost/api/export/json -o fitter-export.json
+curl -L http://localhost/api/export/csv -o fitter-export.csv
 ```
 
 ### Import via API
@@ -109,6 +124,7 @@ curl -L http://localhost:8000/api/export/csv -o fitter-export.csv
 - Supports:
 	- `dry_run` (validate only, no writes)
 	- `clear_existing` (wipe current data before import)
+	- exercises-only payloads
 
 Example payload:
 
@@ -147,6 +163,7 @@ Example payload:
 - Import supports both:
   - legacy exports (raw JSON array of rows)
   - current exports (`{ format_version, created_at, rows }`)
+	- exercises-only payloads (`{ exercises: [...] }` or raw exercise arrays)
 - Unknown/new fields are ignored during import, and missing fields use safe defaults.
 
 This provides practical backward compatibility for historical workout data, even when schema changes require a fresh database.

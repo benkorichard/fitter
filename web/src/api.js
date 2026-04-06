@@ -21,11 +21,16 @@ export const updateExercise = (id, data) => request('PUT', `/exercises/${id}`, d
 export const deleteExercise = (id) => request('DELETE', `/exercises/${id}`)
 
 // Plans
-export const getPlans = () => request('GET', '/plans')
+export const getPlans = (includeArchived = false) => {
+  const params = includeArchived ? '?include_archived=true' : ''
+  return request('GET', `/plans${params}`)
+}
 export const getPlan = (id) => request('GET', `/plans/${id}`)
 export const createPlan = (data) => request('POST', '/plans', data)
 export const updatePlan = (id, data) => request('PUT', `/plans/${id}`, data)
 export const deletePlan = (id) => request('DELETE', `/plans/${id}`)
+export const archivePlan = (id) => request('PUT', `/plans/${id}/archive`)
+export const unarchivePlan = (id) => request('PUT', `/plans/${id}/unarchive`)
 
 // Plan exercises
 export const addPlanExercise = (planId, data) => request('POST', `/plans/${planId}/exercises`, data)
@@ -46,14 +51,22 @@ export const finishSession = (id) => request('POST', `/sessions/${id}/finish`)
 export const logSet = (sessionId, data) => request('POST', `/sessions/${sessionId}/sets`, data)
 export const getSessionSummary = (id) => request('GET', `/sessions/${id}/summary`)
 export const updateSessionNotes = (id, notes) => request('PUT', `/sessions/${id}`, { notes })
+export const setSessionAnalyticsExclusion = (id, exclude) => request('PUT', `/sessions/${id}`, { exclude_from_analytics: Boolean(exclude) })
+export const deleteSession = (id) => request('DELETE', `/sessions/${id}`)
 
 // Stats
 export const getBestSets = () => request('GET', '/stats/best-sets')
 export const getWorkoutHeatmap = (year, month) => request('GET', `/stats/workout-heatmap?year=${year}&month=${month}`)
 
 // Import / export
-export const importJsonData = (rows, options = {}) => request('POST', '/import/json', {
-  rows,
-  dry_run: Boolean(options.dryRun),
-  clear_existing: Boolean(options.clearExisting),
-})
+export const importJsonData = (payload, options = {}) => {
+  const normalizedPayload = Array.isArray(payload)
+    ? { rows: payload }
+    : (payload && typeof payload === 'object' ? { ...payload } : {})
+
+  return request('POST', '/import/json', {
+    ...normalizedPayload,
+    dry_run: Boolean(options.dryRun),
+    clear_existing: Boolean(options.clearExisting),
+  })
+}

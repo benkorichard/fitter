@@ -46,9 +46,11 @@ export default function ProgramProgress() {
   const analysisEntries = useMemo(() => {
     if (!progress || progress.progress_entries.length === 0) return []
 
-    if (selectedExercise === 'ALL') return progress.progress_entries
+    const eligible = progress.progress_entries.filter(e => !e.exclude_from_analytics)
 
-    return progress.progress_entries.filter(
+    if (selectedExercise === 'ALL') return eligible
+
+    return eligible.filter(
       e => (e.exercise_name || '').trim().toLowerCase() === selectedExercise.trim().toLowerCase()
     )
   }, [progress, selectedExercise])
@@ -186,6 +188,8 @@ export default function ProgramProgress() {
     return Object.entries(bySession)
       .sort((a, b) => new Date(a[1].session_date) - new Date(b[1].session_date))
       .map(([sessionId, data]) => {
+        const allSets = Object.values(data.exerciseBuckets).flat()
+        const isExcluded = allSets.some(s => s.exclude_from_analytics)
         const exercises = Object.entries(data.exerciseBuckets)
           .map(([exerciseName, sets]) => {
             const sortedSets = [...sets].sort((x, y) => x.set_number - y.set_number)
@@ -201,6 +205,7 @@ export default function ProgramProgress() {
         return {
           sessionId,
           sessionDate: data.session_date,
+          isExcluded,
           exercises,
         }
       })
@@ -426,9 +431,12 @@ export default function ProgramProgress() {
                 </tr>
               </thead>
               <tbody>
-                {sessionHistory.map(({ sessionId, sessionDate, exercises }) => (
+                {sessionHistory.map(({ sessionId, sessionDate, exercises, isExcluded }) => (
                   <tr key={sessionId}>
-                    <td style={{ fontWeight: 500 }}>{formatDate(sessionDate)}</td>
+                    <td style={{ fontWeight: 500 }}>
+                      {formatDate(sessionDate)}
+                      {isExcluded && <span style={{ marginLeft: 8, color: 'var(--muted)', fontSize: '0.8rem' }}>(excluded)</span>}
+                    </td>
                     <td style={{ fontSize: '0.85rem' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                         {exercises.map(ex => (

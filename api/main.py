@@ -2,11 +2,15 @@ import datetime
 import csv
 import io
 import json
+import logging
+import time
+import uuid
 from collections import defaultdict
 from typing import Any, Dict, List
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.openapi.docs import get_redoc_html
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -26,6 +30,7 @@ def _sqlite_add_missing_columns():
     table_column_sql = {
         "workout_plans": {
             "scheme_type": "ALTER TABLE workout_plans ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
+            "archived": "ALTER TABLE workout_plans ADD COLUMN archived INTEGER DEFAULT 0",
         },
         "plan_exercises": {
             "scheme_type": "ALTER TABLE plan_exercises ADD COLUMN scheme_type VARCHAR(20) DEFAULT 'straight'",
@@ -34,6 +39,7 @@ def _sqlite_add_missing_columns():
         },
         "workout_sessions": {
             "notes": "ALTER TABLE workout_sessions ADD COLUMN notes VARCHAR(1000) DEFAULT ''",
+            "exclude_from_analytics": "ALTER TABLE workout_sessions ADD COLUMN exclude_from_analytics INTEGER DEFAULT 0",
         },
         "session_sets": {
             "rpe": "ALTER TABLE session_sets ADD COLUMN rpe FLOAT",
@@ -61,7 +67,10 @@ def _sqlite_add_missing_columns():
 
 _sqlite_add_missing_columns()
 
-app = FastAPI(title="Fitter API")
+app = FastAPI(title="Fitter API", redoc_url=None)
+logger = logging.getLogger("fitter.api")
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,14 +80,85 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Log every request with status code and latency."""
+    started = time.perf_counter()
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    status_code = 500
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["x-request-id"] = request_id
+        return response
+    except Exception:
+        logger.exception(
+            "request_failed request_id=%s method=%s path=%s client=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            request.client.host if request.client else "unknown",
+        )
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - started) * 1000
+        logger.info(
+            "request request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
+            request_id,
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+        )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception(
+        "unhandled_exception method=%s path=%s",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
+
+@app.get("/api/health", summary="Health check", description="Liveness probe for API process.")
+def health_check():
+    return {"status": "ok", "service": "fitter-api"}
+
+
+@app.get("/redoc", include_in_schema=False)
+def redoc_html():
+    return get_redoc_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - ReDoc",
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2.1.3/bundles/redoc.standalone.js",
+    )
+
+
+@app.get("/api/health/ready", summary="Readiness check", description="Readiness probe with database ping.")
+def readiness_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "ok"}
+    except Exception as exc:
+        logger.exception("readiness_check_failed")
+        raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
+
+
+def _is_analytics_session(session: models.WorkoutSession) -> bool:
+    return not bool(getattr(session, "exclude_from_analytics", False))
+
+
 # ─────────────────────────── Exercises ────────────────────────────
 
-@app.get("/api/exercises", response_model=List[schemas.Exercise])
+@app.get("/api/exercises", response_model=List[schemas.Exercise], summary="List exercises")
 def list_exercises(db: Session = Depends(get_db)):
     return db.query(models.Exercise).order_by(models.Exercise.name).all()
 
 
-@app.post("/api/exercises", response_model=schemas.Exercise, status_code=201)
+@app.post("/api/exercises", response_model=schemas.Exercise, status_code=201, summary="Create exercise")
 def create_exercise(body: schemas.ExerciseCreate, db: Session = Depends(get_db)):
     ex = models.Exercise(**body.model_dump())
     db.add(ex)
@@ -87,7 +167,7 @@ def create_exercise(body: schemas.ExerciseCreate, db: Session = Depends(get_db))
     return ex
 
 
-@app.put("/api/exercises/{exercise_id}", response_model=schemas.Exercise)
+@app.put("/api/exercises/{exercise_id}", response_model=schemas.Exercise, summary="Update exercise")
 def update_exercise(exercise_id: int, body: schemas.ExerciseCreate, db: Session = Depends(get_db)):
     ex = db.get(models.Exercise, exercise_id)
     if not ex:
@@ -99,7 +179,7 @@ def update_exercise(exercise_id: int, body: schemas.ExerciseCreate, db: Session 
     return ex
 
 
-@app.delete("/api/exercises/{exercise_id}", status_code=204)
+@app.delete("/api/exercises/{exercise_id}", status_code=204, summary="Delete exercise")
 def delete_exercise(exercise_id: int, db: Session = Depends(get_db)):
     ex = db.get(models.Exercise, exercise_id)
     if not ex:
@@ -110,29 +190,39 @@ def delete_exercise(exercise_id: int, db: Session = Depends(get_db)):
 
 # ─────────────────────────── Workout Plans ────────────────────────
 
-@app.get("/api/plans", response_model=List[schemas.WorkoutPlan])
-def list_plans(db: Session = Depends(get_db)):
-    return db.query(models.WorkoutPlan).all()
+def _sanitize_plan_for_response(plan: models.WorkoutPlan) -> models.WorkoutPlan:
+    """Drop orphan plan_exercise rows (missing exercise) to keep API responses valid."""
+    if plan and getattr(plan, "plan_exercises", None):
+        plan.plan_exercises = [pe for pe in plan.plan_exercises if pe.exercise is not None]
+    return plan
+
+@app.get("/api/plans", response_model=List[schemas.WorkoutPlan], summary="List workout plans", description="Returns active plans by default. Use include_archived=true to include archived plans.")
+def list_plans(include_archived: bool = False, db: Session = Depends(get_db)):
+    plans_query = db.query(models.WorkoutPlan)
+    if not include_archived:
+        plans_query = plans_query.filter(models.WorkoutPlan.archived == False)
+    plans = plans_query.all()
+    return [_sanitize_plan_for_response(p) for p in plans]
 
 
-@app.get("/api/plans/{plan_id}", response_model=schemas.WorkoutPlan)
+@app.get("/api/plans/{plan_id}", response_model=schemas.WorkoutPlan, summary="Get workout plan")
 def get_plan(plan_id: int, db: Session = Depends(get_db)):
     plan = db.get(models.WorkoutPlan, plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
-    return plan
+    return _sanitize_plan_for_response(plan)
 
 
-@app.post("/api/plans", response_model=schemas.WorkoutPlan, status_code=201)
+@app.post("/api/plans", response_model=schemas.WorkoutPlan, status_code=201, summary="Create workout plan")
 def create_plan(body: schemas.WorkoutPlanCreate, db: Session = Depends(get_db)):
     plan = models.WorkoutPlan(**body.model_dump())
     db.add(plan)
     db.commit()
     db.refresh(plan)
-    return plan
+    return _sanitize_plan_for_response(plan)
 
 
-@app.put("/api/plans/{plan_id}", response_model=schemas.WorkoutPlan)
+@app.put("/api/plans/{plan_id}", response_model=schemas.WorkoutPlan, summary="Update workout plan")
 def update_plan(plan_id: int, body: schemas.WorkoutPlanCreate, db: Session = Depends(get_db)):
     plan = db.get(models.WorkoutPlan, plan_id)
     if not plan:
@@ -141,10 +231,10 @@ def update_plan(plan_id: int, body: schemas.WorkoutPlanCreate, db: Session = Dep
         setattr(plan, k, v)
     db.commit()
     db.refresh(plan)
-    return plan
+    return _sanitize_plan_for_response(plan)
 
 
-@app.delete("/api/plans/{plan_id}", status_code=204)
+@app.delete("/api/plans/{plan_id}", status_code=204, summary="Delete workout plan")
 def delete_plan(plan_id: int, db: Session = Depends(get_db)):
     plan = db.get(models.WorkoutPlan, plan_id)
     if not plan:
@@ -153,9 +243,31 @@ def delete_plan(plan_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@app.put("/api/plans/{plan_id}/archive", response_model=schemas.WorkoutPlan, summary="Archive workout plan")
+def archive_plan(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.get(models.WorkoutPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    plan.archived = True
+    db.commit()
+    db.refresh(plan)
+    return _sanitize_plan_for_response(plan)
+
+
+@app.put("/api/plans/{plan_id}/unarchive", response_model=schemas.WorkoutPlan, summary="Unarchive workout plan")
+def unarchive_plan(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.get(models.WorkoutPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    plan.archived = False
+    db.commit()
+    db.refresh(plan)
+    return _sanitize_plan_for_response(plan)
+
+
 # ─────────────────────────── Plan Exercises ───────────────────────
 
-@app.post("/api/plans/{plan_id}/exercises", response_model=schemas.PlanExercise, status_code=201)
+@app.post("/api/plans/{plan_id}/exercises", response_model=schemas.PlanExercise, status_code=201, summary="Add exercise to plan")
 def add_plan_exercise(plan_id: int, body: schemas.PlanExerciseCreate, db: Session = Depends(get_db)):
     if not db.get(models.WorkoutPlan, plan_id):
         raise HTTPException(404, "Plan not found")
@@ -166,7 +278,7 @@ def add_plan_exercise(plan_id: int, body: schemas.PlanExerciseCreate, db: Sessio
     return pe
 
 
-@app.put("/api/plan-exercises/{pe_id}", response_model=schemas.PlanExercise)
+@app.put("/api/plan-exercises/{pe_id}", response_model=schemas.PlanExercise, summary="Update plan exercise")
 def update_plan_exercise(pe_id: int, body: schemas.PlanExerciseCreate, db: Session = Depends(get_db)):
     pe = db.get(models.PlanExercise, pe_id)
     if not pe:
@@ -178,7 +290,7 @@ def update_plan_exercise(pe_id: int, body: schemas.PlanExerciseCreate, db: Sessi
     return pe
 
 
-@app.delete("/api/plan-exercises/{pe_id}", status_code=204)
+@app.delete("/api/plan-exercises/{pe_id}", status_code=204, summary="Remove exercise from plan")
 def delete_plan_exercise(pe_id: int, db: Session = Depends(get_db)):
     pe = db.get(models.PlanExercise, pe_id)
     if not pe:
@@ -189,12 +301,12 @@ def delete_plan_exercise(pe_id: int, db: Session = Depends(get_db)):
 
 # ─────────────────────────── Programs ───────────────────────────
 
-@app.get("/api/programs", response_model=List[schemas.TrainingProgram])
+@app.get("/api/programs", response_model=List[schemas.TrainingProgram], summary="List training programs")
 def list_programs(db: Session = Depends(get_db)):
     return db.query(models.TrainingProgram).order_by(models.TrainingProgram.created_at.desc()).all()
 
 
-@app.get("/api/programs/{program_id}", response_model=schemas.TrainingProgram)
+@app.get("/api/programs/{program_id}", response_model=schemas.TrainingProgram, summary="Get training program")
 def get_program(program_id: int, db: Session = Depends(get_db)):
     program = db.get(models.TrainingProgram, program_id)
     if not program:
@@ -202,7 +314,7 @@ def get_program(program_id: int, db: Session = Depends(get_db)):
     return program
 
 
-@app.post("/api/programs", response_model=schemas.TrainingProgram, status_code=201)
+@app.post("/api/programs", response_model=schemas.TrainingProgram, status_code=201, summary="Create training program")
 def create_program(body: schemas.TrainingProgramCreate, db: Session = Depends(get_db)):
     program = models.TrainingProgram(**body.model_dump())
     db.add(program)
@@ -211,7 +323,7 @@ def create_program(body: schemas.TrainingProgramCreate, db: Session = Depends(ge
     return program
 
 
-@app.put("/api/programs/{program_id}", response_model=schemas.TrainingProgram)
+@app.put("/api/programs/{program_id}", response_model=schemas.TrainingProgram, summary="Update training program")
 def update_program(program_id: int, body: schemas.TrainingProgramCreate, db: Session = Depends(get_db)):
     program = db.get(models.TrainingProgram, program_id)
     if not program:
@@ -223,7 +335,7 @@ def update_program(program_id: int, body: schemas.TrainingProgramCreate, db: Ses
     return program
 
 
-@app.delete("/api/programs/{program_id}", status_code=204)
+@app.delete("/api/programs/{program_id}", status_code=204, summary="Delete training program")
 def delete_program(program_id: int, db: Session = Depends(get_db)):
     program = db.get(models.TrainingProgram, program_id)
     if not program:
@@ -232,7 +344,7 @@ def delete_program(program_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-@app.get("/api/programs/{program_id}/progress", response_model=schemas.ProgramProgress)
+@app.get("/api/programs/{program_id}/progress", response_model=schemas.ProgramProgress, summary="Get program progress")
 def get_program_progress(program_id: int, db: Session = Depends(get_db)):
     program = db.get(models.TrainingProgram, program_id)
     if not program:
@@ -262,6 +374,7 @@ def get_program_progress(program_id: int, db: Session = Depends(get_db)):
                     weight_used=s.weight_used,
                     rpe=s.rpe,
                     rir=s.rir,
+                    exclude_from_analytics=bool(session.exclude_from_analytics),
                 )
             )
 
@@ -278,7 +391,7 @@ def get_program_progress(program_id: int, db: Session = Depends(get_db)):
 
 # ─────────────────────────── Sessions ─────────────────────────────
 
-@app.post("/api/sessions", response_model=schemas.WorkoutSession, status_code=201)
+@app.post("/api/sessions", response_model=schemas.WorkoutSession, status_code=201, summary="Start workout session")
 def start_session(body: schemas.WorkoutSessionCreate, db: Session = Depends(get_db)):
     if not db.get(models.WorkoutPlan, body.plan_id):
         raise HTTPException(404, "Plan not found")
@@ -291,7 +404,7 @@ def start_session(body: schemas.WorkoutSessionCreate, db: Session = Depends(get_
     return session
 
 
-@app.post("/api/sessions/{session_id}/finish", response_model=schemas.WorkoutSession)
+@app.post("/api/sessions/{session_id}/finish", response_model=schemas.WorkoutSession, summary="Finish workout session")
 def finish_session(session_id: int, db: Session = Depends(get_db)):
     session = db.get(models.WorkoutSession, session_id)
     if not session:
@@ -302,19 +415,30 @@ def finish_session(session_id: int, db: Session = Depends(get_db)):
     return session
 
 
-@app.put("/api/sessions/{session_id}", response_model=schemas.WorkoutSession)
+@app.put("/api/sessions/{session_id}", response_model=schemas.WorkoutSession, summary="Update workout session", description="Supports notes and exclude_from_analytics updates.")
 def update_session(session_id: int, body: dict, db: Session = Depends(get_db)):
     session = db.get(models.WorkoutSession, session_id)
     if not session:
         raise HTTPException(404, "Session not found")
     if "notes" in body:
         session.notes = body["notes"]
+    if "exclude_from_analytics" in body:
+        session.exclude_from_analytics = bool(body["exclude_from_analytics"])
     db.commit()
     db.refresh(session)
     return session
 
 
-@app.post("/api/sessions/{session_id}/sets", response_model=schemas.SessionSet, status_code=201)
+@app.delete("/api/sessions/{session_id}", status_code=204, summary="Delete workout session")
+def delete_session(session_id: int, db: Session = Depends(get_db)):
+    session = db.get(models.WorkoutSession, session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    db.delete(session)
+    db.commit()
+
+
+@app.post("/api/sessions/{session_id}/sets", response_model=schemas.SessionSet, status_code=201, summary="Log session set")
 def log_set(session_id: int, body: schemas.SessionSetCreate, db: Session = Depends(get_db)):
     if not db.get(models.WorkoutSession, session_id):
         raise HTTPException(404, "Session not found")
@@ -325,7 +449,7 @@ def log_set(session_id: int, body: schemas.SessionSetCreate, db: Session = Depen
     return logged
 
 
-@app.get("/api/sessions/{session_id}/summary", response_model=schemas.SessionSummary)
+@app.get("/api/sessions/{session_id}/summary", response_model=schemas.SessionSummary, summary="Get session summary")
 def get_summary(session_id: int, db: Session = Depends(get_db)):
     session = db.get(models.WorkoutSession, session_id)
     if not session:
@@ -346,6 +470,8 @@ def get_summary(session_id: int, db: Session = Depends(get_db)):
 
     for pe_id, sets in grouped.items():
         pe = db.get(models.PlanExercise, pe_id)
+        if not pe or not pe.exercise:  # Skip orphaned relations
+            continue
         total_reps = sum(s.reps_done for s in sets)
         total_weight = sum(s.reps_done * s.weight_used for s in sets)
         grand_total += total_weight
@@ -366,6 +492,7 @@ def get_summary(session_id: int, db: Session = Depends(get_db)):
         finished_at=session.finished_at,
         duration_seconds=duration,
         notes=session.notes,
+        exclude_from_analytics=bool(session.exclude_from_analytics),
         exercises=exercise_summaries,
         grand_total_weight=grand_total,
     )
@@ -373,7 +500,7 @@ def get_summary(session_id: int, db: Session = Depends(get_db)):
 
 # ─────────────────────────── Stats ───────────────────────────────
 
-@app.get("/api/stats/workout-heatmap")
+@app.get("/api/stats/workout-heatmap", summary="Get workout heatmap and streaks")
 def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depends(get_db)):
     now = datetime.datetime.utcnow()
     target_year = year or now.year
@@ -396,6 +523,7 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
         .filter(models.WorkoutSession.started_at < month_end)
         .all()
     )
+    monthly_sessions = [s for s in monthly_sessions if _is_analytics_session(s)]
 
     day_counts: Dict[str, int] = {}
     for s in monthly_sessions:
@@ -435,6 +563,7 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
         .filter(models.WorkoutSession.started_at >= history_start_dt)
         .all()
     )
+    weekly_sessions = [s for s in weekly_sessions if _is_analytics_session(s)]
 
     weekly_counts_map: Dict[str, int] = {}
     for i in range(12):
@@ -459,7 +588,9 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
         })
 
     # Streaks (across all historical session dates).
-    all_session_dates = sorted({s.started_at.date() for s in db.query(models.WorkoutSession).all()})
+    all_sessions = db.query(models.WorkoutSession).all()
+    analytics_sessions = [s for s in all_sessions if _is_analytics_session(s)]
+    all_session_dates = sorted({s.started_at.date() for s in analytics_sessions})
     best_streak = 0
     current_streak = 0
     prev_date = None
@@ -495,11 +626,20 @@ def get_workout_heatmap(year: int = None, month: int = None, db: Session = Depen
         "active_streak": active_streak,
     }
 
-@app.get("/api/stats/best-sets")
+@app.get("/api/stats/best-sets", summary="Get best sets per exercise")
 def get_best_sets(db: Session = Depends(get_db)):
     """Return the best (heaviest non-warmup) set per exercise across all sessions."""
+    analytics_session_ids = {
+        s.id
+        for s in db.query(models.WorkoutSession).all()
+        if _is_analytics_session(s)
+    }
+    if not analytics_session_ids:
+        return []
+
     sets = (
         db.query(models.SessionSet)
+        .filter(models.SessionSet.session_id.in_(analytics_session_ids))
         .filter(models.SessionSet.is_warmup == False)
         .all()
     )
@@ -508,7 +648,7 @@ def get_best_sets(db: Session = Depends(get_db)):
     best: dict = {}
     for s in sets:
         pe = db.get(models.PlanExercise, s.plan_exercise_id)
-        if not pe:
+        if not pe or not pe.exercise:
             continue
         ex = pe.exercise
         key = ex.id
@@ -541,8 +681,8 @@ def _build_export_rows(db: Session):
             "session_notes": session.notes if session else "",
             "plan_name": plan.name if plan else "",
             "program_name": program.name if program else "",
-            "exercise_name": pe.exercise.name if pe else "",
-            "muscle_group": pe.exercise.muscle_group if pe else "",
+            "exercise_name": pe.exercise.name if pe and pe.exercise else "",
+            "muscle_group": pe.exercise.muscle_group if pe and pe.exercise else "",
             "set_number": s.set_number,
             "reps_done": s.reps_done,
             "weight_used": s.weight_used,
@@ -553,7 +693,7 @@ def _build_export_rows(db: Session):
     return rows
 
 
-@app.get("/api/export/csv")
+@app.get("/api/export/csv", summary="Export all data as CSV")
 def export_csv(db: Session = Depends(get_db)):
     rows = _build_export_rows(db)
     fieldnames = ["session_id", "session_date", "session_notes", "plan_name", "program_name",
@@ -573,7 +713,7 @@ def export_csv(db: Session = Depends(get_db)):
     )
 
 
-@app.get("/api/export/json")
+@app.get("/api/export/json", summary="Export all data as JSON")
 def export_json(db: Session = Depends(get_db)):
     rows = _build_export_rows(db)
     payload = json.dumps(
@@ -625,9 +765,26 @@ def _parse_session_date(value: Any) -> datetime.datetime:
     return datetime.datetime.utcnow()
 
 
+def _looks_like_set_row(item: Dict[str, Any]) -> bool:
+    row_keys = {
+        "session_id",
+        "session_date",
+        "plan_name",
+        "program_name",
+        "exercise_name",
+        "set_number",
+        "reps_done",
+        "weight_used",
+        "rpe",
+        "rir",
+        "is_warmup",
+    }
+    return any(k in item for k in row_keys)
+
+
 def _extract_import_rows(payload: Any) -> List[Dict[str, Any]]:
     if isinstance(payload, list):
-        rows = payload
+        rows = [r for r in payload if isinstance(r, dict) and _looks_like_set_row(r)]
     elif isinstance(payload, dict):
         rows = payload.get("rows", [])
     else:
@@ -638,16 +795,50 @@ def _extract_import_rows(payload: Any) -> List[Dict[str, Any]]:
 
     normalized: List[Dict[str, Any]] = []
     for r in rows:
-        if isinstance(r, dict):
+        if isinstance(r, dict) and _looks_like_set_row(r):
             normalized.append(r)
     return normalized
 
 
-@app.post("/api/import/json")
+def _extract_import_exercises(payload: Any) -> List[Dict[str, str]]:
+    if isinstance(payload, list):
+        exercises = payload
+    elif isinstance(payload, dict):
+        exercises = payload.get("exercises", [])
+    else:
+        exercises = []
+
+    if not isinstance(exercises, list):
+        raise HTTPException(400, "Invalid payload. Expected exercises to be a list.")
+
+    normalized: List[Dict[str, str]] = []
+    for ex in exercises:
+        if not isinstance(ex, dict):
+            continue
+        if _looks_like_set_row(ex):
+            continue
+
+        name = (ex.get("name") or ex.get("exercise_name") or "").strip()
+        if not name:
+            continue
+
+        normalized.append(
+            {
+                "name": name,
+                "muscle_group": (ex.get("muscle_group") or "").strip(),
+                "description": (ex.get("description") or "").strip(),
+            }
+        )
+
+    return normalized
+
+
+@app.post("/api/import/json", summary="Import JSON data", description="Accepts rows-based exports and exercises-only payloads. Supports dry-run and clear-existing options.")
 def import_json(payload: dict, db: Session = Depends(get_db)):
     rows = _extract_import_rows(payload)
-    if not rows:
-        raise HTTPException(400, "No rows found in import payload")
+    exercises = _extract_import_exercises(payload)
+    if not rows and not exercises:
+        raise HTTPException(400, "No rows or exercises found in import payload")
 
     dry_run = _to_bool(payload.get("dry_run", False))
     clear_existing = _to_bool(payload.get("clear_existing", False))
@@ -686,6 +877,21 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
             exercise_cache.clear()
             plan_cache.clear()
             program_cache.clear()
+
+        for ex in exercises:
+            ex_key = ex["name"].lower()
+            if ex_key in exercise_cache:
+                continue
+
+            exercise = models.Exercise(
+                name=ex["name"],
+                muscle_group=ex["muscle_group"],
+                description=ex["description"],
+            )
+            db.add(exercise)
+            db.flush()
+            exercise_cache[ex_key] = exercise
+            created["exercises"] += 1
 
         for idx, row in enumerate(rows):
             exercise_name = (row.get("exercise_name") or "Unknown Exercise").strip()
@@ -798,6 +1004,7 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
                 "dry_run": True,
                 "clear_existing": clear_existing,
                 "rows_received": len(rows),
+                "exercises_received": len(exercises),
                 "would_create": created,
             }
 
@@ -807,6 +1014,7 @@ def import_json(payload: dict, db: Session = Depends(get_db)):
             "dry_run": False,
             "clear_existing": clear_existing,
             "rows_received": len(rows),
+            "exercises_received": len(exercises),
             "created": created,
         }
     except HTTPException:

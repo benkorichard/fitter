@@ -17,39 +17,39 @@ High priority
 
 Medium priority
 
-- [ ] API documentation polish
+- [x] API documentation polish
   - Improve schema examples and endpoint descriptions.
 
 - [x] Import capability (CSV/JSON)
   - Add import with validation and dry-run preview.
 
-- [ ] Import flexibility improvements
+- [x] Import flexibility improvements
   - Accept exercises-only JSON payloads (without requiring program/session rows).
   - Support importing from exercise export format directly.
 
-- [ ] Clarify Export/Import UX
+- [x] Clarify Export/Import UX
   - Rename/restructure Export page and nav so import actions are not hidden under Export.
   - Consider split pages or a unified Data Management section.
 
 - [x] Active workout UX refinement
   - Keyboard-first logging, duplicate previous set, and quick increment/decrement controls.
 
-- [ ] Lightweight observability
+- [x] Lightweight observability
   - Request logging, simple error tracking, and health checks.
 
-- [ ] Program status persistence bug
+- [x] Program status persistence bug
   - In Program Edit, saving status (active/completed/paused) is not persisted and reverts to active.
 
-- [ ] Session deletion/cancel capability
+- [x] Session deletion/cancel capability
   - Allow removing a workout session from a program (e.g., aborted due to injury/early stop).
   - Add confirmation UX to avoid accidental deletion.
 
-- [ ] Session archive lifecycle (preferred over hard delete)
+- [x] Session archive lifecycle (preferred over hard delete)
   - Archive sessions to hide them from day-to-day dashboard while preserving analytics/history.
   - Support unarchive and duplicate archived session into a new active session/template.
   - Keep hard-delete as optional destructive action with strong confirmation.
 
-- [ ] Analytics protection for aborted sessions
+- [x] Analytics protection for aborted sessions
   - Prevent very short/aborted workouts (e.g., 1 set then finish) from skewing progression analytics.
   - Options: mark session as aborted/invalid, minimum completed-set threshold, or exclude from trend calculations.
 

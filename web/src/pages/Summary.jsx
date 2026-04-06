@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import * as api from '../api'
 
 function formatDuration(seconds) {
@@ -14,12 +14,14 @@ function formatDuration(seconds) {
 
 export default function Summary() {
   const { sessionId } = useParams()
+  const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [analyticsBusy, setAnalyticsBusy] = useState(false)
 
   useEffect(() => {
     api.getSessionSummary(sessionId)
@@ -44,6 +46,31 @@ export default function Summary() {
     }
   }
 
+  async function deleteCurrentSession() {
+    const confirmed = window.confirm('Delete this session? This will remove its logged sets from history and analytics.')
+    if (!confirmed) return
+
+    try {
+      await api.deleteSession(sessionId)
+      navigate('/programs')
+    } catch (e) {
+      alert('Error deleting session: ' + e.message)
+    }
+  }
+
+  async function toggleAnalyticsExclusion() {
+    setAnalyticsBusy(true)
+    try {
+      const nextValue = !summary.exclude_from_analytics
+      await api.setSessionAnalyticsExclusion(sessionId, nextValue)
+      setSummary(prev => ({ ...prev, exclude_from_analytics: nextValue }))
+    } catch (e) {
+      alert('Error updating analytics flag: ' + e.message)
+    } finally {
+      setAnalyticsBusy(false)
+    }
+  }
+
   if (loading) return <div className="loading">Loading summary…</div>
   if (error) return <div className="error">{error}</div>
 
@@ -54,6 +81,20 @@ export default function Summary() {
     <div>
       <h1>Workout Complete 🎉</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{summary.plan_name}</p>
+
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <h2>Analytics inclusion</h2>
+        <p style={{ color: 'var(--muted)', marginBottom: '0.75rem' }}>
+          {summary.exclude_from_analytics
+            ? 'This session is excluded from analytics (progress, 1RM, consistency).'
+            : 'This session is included in analytics.'}
+        </p>
+        <button className="btn-secondary" onClick={toggleAnalyticsExclusion} disabled={analyticsBusy}>
+          {analyticsBusy
+            ? 'Updating…'
+            : (summary.exclude_from_analytics ? 'Include in analytics' : 'Mark as aborted (exclude)')}
+        </button>
+      </div>
 
       <div className="summary-stats">
         <div className="stat-card">
@@ -148,6 +189,7 @@ export default function Summary() {
 
       <div className="flex-gap mt-3">
         <Link to="/"><button className="btn-primary">Back to Sessions</button></Link>
+        <button className="btn-danger" onClick={deleteCurrentSession}>Delete Session</button>
       </div>
     </div>
   )
